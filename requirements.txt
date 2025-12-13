@@ -1,0 +1,7 @@
+Flask
+Flask-SQLAlchemy
+APScheduler
+requests
+curl-cffi
+pymysql
+cryptography
