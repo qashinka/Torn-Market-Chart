@@ -11,6 +11,13 @@ let seriesMap = {
     marketAvg: null
 };
 
+let seriesSettings = {
+    bazaarMin: { visible: true, type: 'Candlestick', title: 'Bazaar Min', color: '#10b981', upColor: '#10b981', downColor: '#ef4444' },
+    bazaarAvg: { visible: true, type: 'Line', title: 'Bazaar Avg', color: '#14b8a6', lineStyle: 2 },
+    marketMin: { visible: true, type: 'Candlestick', title: 'Market Min', color: '#3b82f6', upColor: '#3b82f6', downColor: '#ef4444' },
+    marketAvg: { visible: true, type: 'Line', title: 'Market Avg', color: '#6366f1', lineStyle: 2 }
+};
+
 // --- Initialization ---
 document.addEventListener('DOMContentLoaded', () => {
     if (typeof LightweightCharts === 'undefined') {
@@ -101,9 +108,9 @@ function resampleData(data, intervalMinutes) {
         return {
             time: Number(t),
             bazaar_min: getOHLC(b.b_min),
-            bazaar_avg: getLast(b.b_avg),
+            bazaar_avg: getOHLC(b.b_avg),
             market_min: getOHLC(b.m_min),
-            market_avg: getLast(b.m_avg),
+            market_avg: getOHLC(b.m_avg),
         };
     });
 }
@@ -132,7 +139,6 @@ function updateChartRaw() {
 
     const tfIdx = document.getElementById('timeframeSelect').value;
     const tfMinutes = parseInt(tfIdx);
-    const chartType = document.getElementById('chartTypeSelect').value; // 'Line' or 'Candlestick'
 
     // 1. Resample Data
     const processed = resampleData(rawData, tfMinutes);
@@ -145,69 +151,128 @@ function updateChartRaw() {
 
     seriesMap = { bazaarMin: null, bazaarAvg: null, marketMin: null, marketAvg: null };
 
-    // 3. Create Series
-    // Min prices use the selected Chart Type (Candle or Line)
-    if (chartType === 'Candlestick') {
-        seriesMap.bazaarMin = chart.addCandlestickSeries({ title: 'Bazaar Min', upColor: '#10b981', downColor: '#ef4444', borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444' });
-        seriesMap.marketMin = chart.addCandlestickSeries({ title: 'Market Min', upColor: '#3b82f6', downColor: '#ef4444', borderVisible: false, wickUpColor: '#3b82f6', wickDownColor: '#ef4444' });
-    } else {
-        seriesMap.bazaarMin = chart.addLineSeries({ title: 'Bazaar Min', color: '#10b981', lineWidth: 2 });
-        seriesMap.marketMin = chart.addLineSeries({ title: 'Market Min', color: '#3b82f6', lineWidth: 2 });
-    }
-
-    // Average prices are ALWAYS Lines (dashed)
-    seriesMap.bazaarAvg = chart.addLineSeries({ title: 'Bazaar Avg', color: '#14b8a6', lineWidth: 1, lineStyle: 2 });
-    seriesMap.marketAvg = chart.addLineSeries({ title: 'Market Avg', color: '#6366f1', lineWidth: 1, lineStyle: 2 });
+    // 3. Create Series based on settings
+    Object.keys(seriesSettings).forEach(key => {
+        const s = seriesSettings[key];
+        if (s.type === 'Candlestick') {
+            seriesMap[key] = chart.addCandlestickSeries({
+                title: s.title,
+                upColor: s.upColor || s.color,
+                downColor: s.downColor || '#ef4444',
+                borderVisible: false,
+                wickUpColor: s.upColor || s.color,
+                wickDownColor: s.downColor || '#ef4444'
+            });
+        } else {
+            seriesMap[key] = chart.addLineSeries({
+                title: s.title,
+                color: s.color,
+                lineWidth: s.lineWidth || 2,
+                lineStyle: s.lineStyle || 0
+            });
+        }
+    });
 
     // 4. Map Data to Series Format
-    // LWCharts expects distinct arrays for each series
-    const bMinData = [], bAvgData = [], mMinData = [], mAvgData = [];
+    const dataMap = {
+        bazaarMin: [],
+        bazaarAvg: [],
+        marketMin: [],
+        marketAvg: []
+    };
 
     processed.forEach(p => {
-        // Bazaar Min
-        if (p.bazaar_min) {
-            if (chartType === 'Candlestick') {
-                bMinData.push({ time: p.time, open: p.bazaar_min.open, high: p.bazaar_min.high, low: p.bazaar_min.low, close: p.bazaar_min.close });
-            } else {
-                bMinData.push({ time: p.time, value: p.bazaar_min.value });
+        // Map raw data keys to settings keys
+        const rawKeys = {
+            bazaarMin: p.bazaar_min,
+            bazaarAvg: p.bazaar_avg,
+            marketMin: p.market_min,
+            marketAvg: p.market_avg
+        };
+
+        Object.keys(seriesSettings).forEach(key => {
+            const rawVal = rawKeys[key];
+            if (rawVal) {
+                if (seriesSettings[key].type === 'Candlestick') {
+                    dataMap[key].push({
+                        time: p.time,
+                        open: rawVal.open,
+                        high: rawVal.high,
+                        low: rawVal.low,
+                        close: rawVal.close
+                    });
+                } else {
+                    dataMap[key].push({
+                        time: p.time,
+                        value: rawVal.value
+                    });
+                }
             }
-        }
-        // Market Min
-        if (p.market_min) {
-            if (chartType === 'Candlestick') {
-                mMinData.push({ time: p.time, open: p.market_min.open, high: p.market_min.high, low: p.market_min.low, close: p.market_min.close });
-            } else {
-                mMinData.push({ time: p.time, value: p.market_min.value });
-            }
-        }
-        // Averages
-        if (p.bazaar_avg !== null) bAvgData.push({ time: p.time, value: p.bazaar_avg });
-        if (p.market_avg !== null) mAvgData.push({ time: p.time, value: p.market_avg });
+        });
     });
 
     // 5. Set Data
-    seriesMap.bazaarMin.setData(bMinData);
-    seriesMap.bazaarAvg.setData(bAvgData);
-    seriesMap.marketMin.setData(mMinData);
-    seriesMap.marketAvg.setData(mAvgData);
+    Object.keys(seriesMap).forEach(key => {
+        if (seriesMap[key]) {
+            seriesMap[key].setData(dataMap[key]);
+        }
+    });
 
-    // 6. Apply Visibility Checkboxes
-    toggleSeries();
+    // 6. Apply Visibility
+    Object.keys(seriesMap).forEach(key => {
+        if (seriesMap[key]) {
+            seriesMap[key].applyOptions({ visible: seriesSettings[key].visible });
+        }
+    });
 
     // 7. Fit Content
     chart.timeScale().fitContent();
 }
 
-function toggleSeries() {
-    const showBMin = document.getElementById('checkBazaarMin').checked;
-    const showBAvg = document.getElementById('checkBazaarAvg').checked;
-    const showMMin = document.getElementById('checkMarketMin').checked;
-    const showMAvg = document.getElementById('checkMarketAvg').checked;
+// --- Chart Settings Modal Logic ---
 
-    if (seriesMap.bazaarMin) seriesMap.bazaarMin.applyOptions({ visible: showBMin });
-    if (seriesMap.bazaarAvg) seriesMap.bazaarAvg.applyOptions({ visible: showBAvg });
-    if (seriesMap.marketMin) seriesMap.marketMin.applyOptions({ visible: showMMin });
-    if (seriesMap.marketAvg) seriesMap.marketAvg.applyOptions({ visible: showMAvg });
+function openChartSettings() {
+    document.getElementById('chartSettingsModal').classList.add('open');
+    renderChartSettings();
+}
+
+function closeChartSettings() {
+    document.getElementById('chartSettingsModal').classList.remove('open');
+}
+
+function renderChartSettings() {
+    const content = document.getElementById('chartSettingsContent');
+    content.innerHTML = '';
+
+    Object.keys(seriesSettings).forEach(key => {
+        const setting = seriesSettings[key];
+        const div = document.createElement('div');
+        div.className = 'settings-list-item';
+        div.style.display = 'flex';
+        div.style.gap = '1rem';
+        div.style.justifyContent = 'space-between';
+
+        div.innerHTML = `
+            <div style="flex: 1; display: flex; align-items: center; gap: 0.5rem;">
+                <input type="checkbox" id="visible-${key}" ${setting.visible ? 'checked' : ''} onchange="updateSeriesSetting('${key}', 'visible', this.checked)">
+                <span style="color: ${setting.color}; font-weight: bold;">${setting.title}</span>
+            </div>
+            <div>
+                <select onchange="updateSeriesSetting('${key}', 'type', this.value)">
+                    <option value="Line" ${setting.type === 'Line' ? 'selected' : ''}>Line</option>
+                    <option value="Candlestick" ${setting.type === 'Candlestick' ? 'selected' : ''}>Candlestick</option>
+                </select>
+            </div>
+        `;
+        content.appendChild(div);
+    });
+}
+
+function updateSeriesSetting(key, field, value) {
+    if (seriesSettings[key]) {
+        seriesSettings[key][field] = value;
+        updateChartRaw();
+    }
 }
 
 

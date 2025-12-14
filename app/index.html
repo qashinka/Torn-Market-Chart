@@ -81,33 +81,8 @@
                     </select>
                 </div>
 
-                <div class="toolbar-group">
-                    <label>Type:</label>
-                    <select id="chartTypeSelect" onchange="updateChartRaw()">
-                        <option value="Line">Line Chart</option>
-                        <option value="Candlestick">Candlestick</option>
-                    </select>
-                </div>
-
                 <div class="toolbar-group" style="margin-left:auto;">
-                    <div style="display: flex; gap: 0.8rem;">
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
-                            <input type="checkbox" id="checkBazaarMin" checked onchange="toggleSeries()">
-                            <span style="color:#10b981;">Bazaar Min</span>
-                        </label>
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
-                            <input type="checkbox" id="checkBazaarAvg" checked onchange="toggleSeries()">
-                            <span style="color:#14b8a6;">Avg</span>
-                        </label>
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
-                            <input type="checkbox" id="checkMarketMin" checked onchange="toggleSeries()">
-                            <span style="color:#3b82f6;">Market Min</span>
-                        </label>
-                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
-                            <input type="checkbox" id="checkMarketAvg" checked onchange="toggleSeries()">
-                            <span style="color:#6366f1;">Avg</span>
-                        </label>
-                    </div>
+                    <button class="btn-primary" onclick="openChartSettings()">Chart Settings</button>
                 </div>
             </div>
 
@@ -147,6 +122,19 @@
             </div>
             <div class="settings-list" id="trackedItemList">
                 <!-- Items loaded via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Settings Modal -->
+    <div id="chartSettingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Chart Settings</h3>
+                <button class="close-btn" onclick="closeChartSettings()">&times;</button>
+            </div>
+            <div id="chartSettingsContent">
+                <!-- Settings populated via JS -->
             </div>
         </div>
     </div>
