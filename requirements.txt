@@ -6,4 +6,3 @@ requests
 cloudscraper
 pymysql
 cryptography
-jinja2
