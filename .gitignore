@@ -11,3 +11,4 @@ venv/
 *.db
 .DS_Store
 db_data/
+marketplace.py

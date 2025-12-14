@@ -1,9 +1,7 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-apscheduler
+Flask
+Flask-SQLAlchemy
+APScheduler
 requests
-cloudscraper
+curl-cffi
 pymysql
 cryptography
-jinja2

@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torn City Price Tracker</title>
+    <!-- Use specific v4.1.1 version known to work -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+
+    <header>
+        <h1>Torn Market Tracker</h1>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-primary" onclick="openSettings()">Settings</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">Tracked Items</div>
+            <ul class="item-list" id="itemList">
+                <!-- Items loaded via JS -->
+            </ul>
+        </div>
+        <div class="main-content">
+            <div class="chart-toolbar">
+                <div class="toolbar-group">
+                    <label>Timeframe:</label>
+                    <select id="timeframeSelect" onchange="updateChartRaw()">
+                        <option value="1">1 Min (Raw)</option>
+                        <option value="5">5 Min</option>
+                        <option value="15">15 Min</option>
+                        <option value="30">30 Min</option>
+                        <option value="60">1 Hour</option>
+                        <option value="240">4 Hour</option>
+                        <option value="1440">1 Day</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-group">
+                    <label>Type:</label>
+                    <select id="chartTypeSelect" onchange="updateChartRaw()">
+                        <option value="Line">Line Chart</option>
+                        <option value="Candlestick">Candlestick</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-group" style="margin-left:auto;">
+                    <div style="display: flex; gap: 0.8rem;">
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkBazaarMin" checked onchange="toggleSeries()">
+                            <span style="color:#10b981;">Bazaar Min</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkBazaarAvg" checked onchange="toggleSeries()">
+                            <span style="color:#14b8a6;">Avg</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkMarketMin" checked onchange="toggleSeries()">
+                            <span style="color:#3b82f6;">Market Min</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkMarketAvg" checked onchange="toggleSeries()">
+                            <span style="color:#6366f1;">Avg</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div id="loading"
+                    style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color: var(--text-secondary);">
+                    Select an item to view price history</div>
+                <div id="chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Configuration</h3>
+                <button class="close-btn" onclick="closeSettings()">&times;</button>
+            </div>
+
+            <h2>API Keys</h2>
+            <div class="form-group">
+                <input type="text" id="apiKeyInput" placeholder="Enter Torn API Key">
+                <button class="btn-primary" onclick="addApiKey()">Add</button>
+            </div>
+            <div class="settings-list" id="apiKeyList">
+                <!-- Keys loaded via JS -->
+            </div>
+
+            <h2>Tracked Items</h2>
+            <div class="form-group">
+                <input type="number" id="itemIdInput" placeholder="Item ID">
+                <input type="text" id="itemNameInput" placeholder="Item Name (Optional)">
+                <button class="btn-primary" onclick="addItem()">Track</button>
+            </div>
+            <div class="settings-list" id="trackedItemList">
+                <!-- Items loaded via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- State & Config ---
+        let chart;
+        let currentItemId = null;
+        let rawData = []; // Store raw API data
+
+        let seriesMap = {
+            bazaarMin: null,
+            bazaarAvg: null,
+            marketMin: null,
+            marketAvg: null
+        };
+
+        // --- Initialization ---
+        document.addEventListener('DOMContentLoaded', () => {
+            if (typeof LightweightCharts === 'undefined') {
+                alert("Error: TradingView Library not loaded. Check internet connection.");
+                return;
+            }
+            try {
+                initChartBase();
+            } catch (e) {
+                console.error("Init Chart Failed:", e);
+                alert("Init Chart Failed: " + e.message);
+            }
+            loadItems();
+
+            new ResizeObserver(entries => {
+                if (!chart || entries.length === 0 || entries[0].target !== document.getElementById('chart')) { return; }
+                const newRect = entries[0].contentRect;
+                chart.applyOptions({ width: newRect.width, height: newRect.height });
+            }).observe(document.getElementById('chart'));
+        });
+
+        function initChartBase() {
+            if (chart) return;
+            const chartElement = document.getElementById('chart');
+            if (!chartElement) return;
+
+            chart = LightweightCharts.createChart(chartElement, {
+                width: chartElement.clientWidth,
+                height: chartElement.clientHeight,
+                layout: {
+                    background: { type: 'solid', color: '#1e293b' },
+                    textColor: '#94a3b8',
+                },
+                grid: {
+                    vertLines: { color: '#334155' },
+                    horzLines: { color: '#334155' },
+                },
+                timeScale: {
+                    timeVisible: true,
+                    secondsVisible: false,
+                    // If timeframe is large, switch timeFormat? LWCharts handles auto-scale well.
+                },
+                rightPriceScale: {
+                    borderColor: '#334155',
+                },
+            });
+            console.log("Chart Base Initialized");
+        }
+
+        // --- Data Resampling Logic ---
+
+        // Convert raw 1-min logs into aggregated candles/lines
+        function resampleData(data, intervalMinutes) {
+            if (!data || data.length === 0) return [];
+
+            const intervalSeconds = intervalMinutes * 60;
+            const buckets = {};
+
+            data.forEach(point => {
+                const timeStr = point.time;
+                const time = Number(timeStr);
+                const bucketTime = Math.floor(time / intervalSeconds) * intervalSeconds; // floor to nearest bucket
+
+                if (!buckets[bucketTime]) {
+                    buckets[bucketTime] = {
+                        time: bucketTime,
+                        b_min: [], b_avg: [],
+                        m_min: [], m_avg: []
+                    };
+                }
+                if (point.bazaar_min !== null) buckets[bucketTime].b_min.push(point.bazaar_min);
+                if (point.bazaar_avg !== null) buckets[bucketTime].b_avg.push(point.bazaar_avg);
+                if (point.market_min !== null) buckets[bucketTime].m_min.push(point.market_min);
+                if (point.market_avg !== null) buckets[bucketTime].m_avg.push(point.market_avg);
+            });
+
+            // Flatten buckets
+            const sortedTimes = Object.keys(buckets).sort((a, b) => a - b);
+
+            return sortedTimes.map(t => {
+                const b = buckets[t];
+                return {
+                    time: Number(t),
+                    bazaar_min: getOHLC(b.b_min),
+                    bazaar_avg: getLast(b.b_avg),
+                    market_min: getOHLC(b.m_min),
+                    market_avg: getLast(b.m_avg),
+                };
+            });
+        }
+
+        function getOHLC(arr) {
+            if (!arr || arr.length === 0) return null;
+            return {
+                open: arr[0],
+                high: Math.max(...arr),
+                low: Math.min(...arr),
+                close: arr[arr.length - 1],
+                value: arr[arr.length - 1] // Keep a 'value' prop for Line charts
+            };
+        }
+
+        function getLast(arr) {
+            if (!arr || arr.length === 0) return null;
+            return arr[arr.length - 1];
+        }
+
+        // --- Rendering ---
+
+        function updateChartRaw() {
+            if (!rawData || rawData.length === 0) return;
+            if (!chart) initChartBase();
+
+            const tfIdx = document.getElementById('timeframeSelect').value;
+            const tfMinutes = parseInt(tfIdx);
+            const chartType = document.getElementById('chartTypeSelect').value; // 'Line' or 'Candlestick'
+
+            // 1. Resample Data
+            const processed = resampleData(rawData, tfMinutes);
+
+            // 2. Remove Old Series
+            if (seriesMap.bazaarMin) chart.removeSeries(seriesMap.bazaarMin);
+            if (seriesMap.bazaarAvg) chart.removeSeries(seriesMap.bazaarAvg);
+            if (seriesMap.marketMin) chart.removeSeries(seriesMap.marketMin);
+            if (seriesMap.marketAvg) chart.removeSeries(seriesMap.marketAvg);
+
+            seriesMap = { bazaarMin: null, bazaarAvg: null, marketMin: null, marketAvg: null };
+
+            // 3. Create Series
+            // Min prices use the selected Chart Type (Candle or Line)
+            if (chartType === 'Candlestick') {
+                seriesMap.bazaarMin = chart.addCandlestickSeries({ title: 'Bazaar Min', upColor: '#10b981', downColor: '#ef4444', borderVisible: false, wickUpColor: '#10b981', wickDownColor: '#ef4444' });
+                seriesMap.marketMin = chart.addCandlestickSeries({ title: 'Market Min', upColor: '#3b82f6', downColor: '#ef4444', borderVisible: false, wickUpColor: '#3b82f6', wickDownColor: '#ef4444' });
+            } else {
+                seriesMap.bazaarMin = chart.addLineSeries({ title: 'Bazaar Min', color: '#10b981', lineWidth: 2 });
+                seriesMap.marketMin = chart.addLineSeries({ title: 'Market Min', color: '#3b82f6', lineWidth: 2 });
+            }
+
+            // Average prices are ALWAYS Lines (dashed)
+            seriesMap.bazaarAvg = chart.addLineSeries({ title: 'Bazaar Avg', color: '#14b8a6', lineWidth: 1, lineStyle: 2 });
+            seriesMap.marketAvg = chart.addLineSeries({ title: 'Market Avg', color: '#6366f1', lineWidth: 1, lineStyle: 2 });
+
+            // 4. Map Data to Series Format
+            // LWCharts expects distinct arrays for each series
+            const bMinData = [], bAvgData = [], mMinData = [], mAvgData = [];
+
+            processed.forEach(p => {
+                // Bazaar Min
+                if (p.bazaar_min) {
+                    if (chartType === 'Candlestick') {
+                        bMinData.push({ time: p.time, open: p.bazaar_min.open, high: p.bazaar_min.high, low: p.bazaar_min.low, close: p.bazaar_min.close });
+                    } else {
+                        bMinData.push({ time: p.time, value: p.bazaar_min.value });
+                    }
+                }
+                // Market Min
+                if (p.market_min) {
+                    if (chartType === 'Candlestick') {
+                        mMinData.push({ time: p.time, open: p.market_min.open, high: p.market_min.high, low: p.market_min.low, close: p.market_min.close });
+                    } else {
+                        mMinData.push({ time: p.time, value: p.market_min.value });
+                    }
+                }
+                // Averages
+                if (p.bazaar_avg !== null) bAvgData.push({ time: p.time, value: p.bazaar_avg });
+                if (p.market_avg !== null) mAvgData.push({ time: p.time, value: p.market_avg });
+            });
+
+            // 5. Set Data
+            seriesMap.bazaarMin.setData(bMinData);
+            seriesMap.bazaarAvg.setData(bAvgData);
+            seriesMap.marketMin.setData(mMinData);
+            seriesMap.marketAvg.setData(mAvgData);
+
+            // 6. Apply Visibility Checkboxes
+            toggleSeries();
+
+            // 7. Fit Content
+            chart.timeScale().fitContent();
+        }
+
+        function toggleSeries() {
+            const showBMin = document.getElementById('checkBazaarMin').checked;
+            const showBAvg = document.getElementById('checkBazaarAvg').checked;
+            const showMMin = document.getElementById('checkMarketMin').checked;
+            const showMAvg = document.getElementById('checkMarketAvg').checked;
+
+            if (seriesMap.bazaarMin) seriesMap.bazaarMin.applyOptions({ visible: showBMin });
+            if (seriesMap.bazaarAvg) seriesMap.bazaarAvg.applyOptions({ visible: showBAvg });
+            if (seriesMap.marketMin) seriesMap.marketMin.applyOptions({ visible: showMMin });
+            if (seriesMap.marketAvg) seriesMap.marketAvg.applyOptions({ visible: showMAvg });
+        }
+
+
+        // --- API & UI Logic ---
+
+        async function loadItems() {
+            const res = await fetch('/api/items');
+            const items = await res.json();
+            const list = document.getElementById('itemList');
+            list.innerHTML = '';
+            items.forEach(item => {
+                const li = document.createElement('li');
+                li.textContent = `${item.item_name} (${item.item_id})`;
+                li.onclick = () => selectItem(item.item_id, li);
+                list.appendChild(li);
+            });
+            renderSettingsItems(items);
+        }
+
+        async function selectItem(id, elem) {
+            document.querySelectorAll('.item-list li').forEach(el => el.classList.remove('active'));
+            if (elem) elem.classList.add('active');
+
+            currentItemId = id;
+            document.getElementById('loading').textContent = 'Loading...';
+            document.getElementById('loading').style.display = 'block';
+
+            try {
+                const res = await fetch(`/api/history/${id}`);
+                const data = await res.json();
+
+                // Store globally so we can resample later
+                rawData = data;
+
+                document.getElementById('loading').style.display = 'none';
+
+                if (data.length === 0) {
+                    document.getElementById('loading').textContent = 'No data available yet.';
+                    document.getElementById('loading').style.display = 'block';
+                } else {
+                    updateChartRaw(); // This handles processing and rendering
+                }
+            } catch (e) {
+                console.error(e);
+                alert("Error loading data");
+            }
+        }
+
+        // --- Settings Modal ---
+        function openSettings() {
+            document.getElementById('settingsModal').classList.add('open');
+            loadApiKeys();
+            loadItems();
+        }
+
+        function closeSettings() {
+            document.getElementById('settingsModal').classList.remove('open');
+        }
+
+        async function loadApiKeys() {
+            const res = await fetch('/api/keys');
+            const keys = await res.json();
+            const list = document.getElementById('apiKeyList');
+            list.innerHTML = '';
+            keys.forEach(k => {
+                const div = document.createElement('div');
+                div.className = 'settings-list-item';
+                div.innerHTML = `
+                <span>...${k.key.slice(-4)} (${k.is_active ? 'Active' : 'Inactive'})</span>
+                <button class="btn-danger" onclick="deleteKey(${k.id})">Delete</button>
+            `;
+                list.appendChild(div);
+            });
+        }
+
+        async function addApiKey() {
+            const input = document.getElementById('apiKeyInput');
+            const key = input.value.trim();
+            if (!key) return;
+
+            const res = await fetch('/api/keys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ key })
+            });
+            if (res.ok) {
+                input.value = '';
+                loadApiKeys();
+            } else {
+                alert('Error adding key');
+            }
+        }
+
+        async function deleteKey(id) {
+            if (!confirm('Are you sure?')) return;
+            await fetch(`/api/keys/${id}`, { method: 'DELETE' });
+            loadApiKeys();
+        }
+
+        async function addItem() {
+            const idInput = document.getElementById('itemIdInput');
+            const nameInput = document.getElementById('itemNameInput');
+            const item_id = idInput.value;
+            const item_name = nameInput.value;
+            if (!item_id) return;
+
+            const res = await fetch('/api/items', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ item_id, item_name })
+            });
+
+            if (res.ok) {
+                idInput.value = '';
+                nameInput.value = '';
+                loadItems();
+            } else {
+                alert('Error adding item');
+            }
+        }
+
+        async function deleteItem(db_id) {
+            if (!confirm('Stop tracking this item?')) return;
+            await fetch(`/api/items/${db_id}`, { method: 'DELETE' });
+            loadItems();
+        }
+
+        function renderSettingsItems(items) {
+            const list = document.getElementById('trackedItemList');
+            list.innerHTML = '';
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'settings-list-item';
+                div.innerHTML = `
+                <span>${item.item_name} [${item.item_id}]</span>
+                <button class="btn-danger" onclick="deleteItem(${item.id})">Remove</button>
+            `;
+                list.appendChild(div);
+            });
+        }
+
+
+    </script>
+</body>
+
+</html>
