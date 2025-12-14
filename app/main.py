@@ -7,7 +7,6 @@ from typing import List, Optional
 
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.templating import Jinja2Templates
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -130,7 +129,6 @@ app = FastAPI(lifespan=lifespan)
 
 # === Static & Templates ===
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
 # Mount static if needed (though app.py didn't seem to have explicit static mount,
 # but usually Flask serves static folder automatically.
@@ -143,7 +141,8 @@ if os.path.isdir(os.path.join(os.path.dirname(__file__), "static")):
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request):
-    return templates.TemplateResponse(request=request, name="index.html")
+    with open(os.path.join(os.path.dirname(__file__), "index.html"), "r") as f:
+        return HTMLResponse(content=f.read(), status_code=200)
 
 @app.get("/api/keys", response_model=List[schemas.ApiKeyResponse])
 def get_keys(db: Session = Depends(database.get_db)):
