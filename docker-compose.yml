@@ -9,28 +9,5 @@ services:
     environment:
       - TZ=Asia/Tokyo
       - FLASK_DEBUG=1
-      - DATABASE_URL=mysql+pymysql://user:password@db/torn_market
-    depends_on:
-      db:
-        condition: service_healthy
+      - DATABASE_URL=${DATABASE_URL}
     restart: unless-stopped
-
-  db:
-    image: mysql:8.0
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: torn_market
-      MYSQL_USER: user
-      MYSQL_PASSWORD: password
-    ports:
-      - "3306:3306"
-    volumes:
-      - db_data:/var/lib/mysql
-    healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      timeout: 20s
-      retries: 10
-
-volumes:
-  db_data:
