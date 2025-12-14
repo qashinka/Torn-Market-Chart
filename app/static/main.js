@@ -2,6 +2,7 @@
 let chart;
 let currentItemId = null;
 let rawData = []; // Store raw API data
+let allItems = []; // Store all item definitions
 
 let seriesMap = {
     bazaarMin: null,
@@ -23,6 +24,12 @@ document.addEventListener('DOMContentLoaded', () => {
         alert("Init Chart Failed: " + e.message);
     }
     loadItems();
+
+    // Fetch all item definitions immediately on load (triggers sync if needed on backend)
+    fetchAllItems();
+
+    // Autocomplete Init
+    setupAutocomplete();
 
     new ResizeObserver(entries => {
         if (!chart || entries.length === 0 || entries[0].target !== document.getElementById('chart')) { return; }
@@ -254,6 +261,7 @@ function openSettings() {
     document.getElementById('settingsModal').classList.add('open');
     loadApiKeys();
     loadItems();
+    // fetchAllItems is now called on DOMContentLoaded
 }
 
 function closeSettings() {
@@ -300,17 +308,127 @@ async function deleteKey(id) {
     loadApiKeys();
 }
 
+// --- Sync & Autocomplete Logic ---
+
+async function fetchAllItems() {
+    try {
+        const res = await fetch('/api/all-items');
+        if (res.ok) {
+            allItems = await res.json();
+            console.log(`Loaded ${allItems.length} item definitions for autocomplete.`);
+        }
+    } catch (e) {
+        console.error("Failed to fetch item definitions", e);
+    }
+}
+
+function setupAutocomplete() {
+    const input = document.getElementById('itemNameInput');
+    const idInput = document.getElementById('itemIdInput');
+
+    // Create dropdown container if not exists (though styles assume it does or created dynamically)
+    // We'll create logic to manage the dropdown div
+
+    let currentFocus = -1;
+
+    input.addEventListener("input", function(e) {
+        const val = this.value;
+        closeAllLists();
+        if (!val) return false;
+
+        currentFocus = -1;
+
+        // Filter items
+        // Since we might have 1000s, filter carefully.
+        // Limit to top 10 matches
+        const matches = allItems.filter(item =>
+            item.name.toLowerCase().includes(val.toLowerCase())
+        ).slice(0, 10);
+
+        if (matches.length === 0) return;
+
+        const listDiv = document.createElement("div");
+        listDiv.setAttribute("id", this.id + "autocomplete-list");
+        listDiv.setAttribute("class", "autocomplete-items");
+        this.parentNode.appendChild(listDiv);
+
+        matches.forEach(item => {
+            const div = document.createElement("div");
+            // Bold matching part? simplified for now
+            div.innerHTML = `${item.name} <small>(${item.item_id})</small>`;
+            div.innerHTML += `<input type='hidden' value='${item.item_id}'>`;
+            div.innerHTML += `<input type='hidden' value='${item.name}'>`; // Store name too to fill input
+
+            div.addEventListener("click", function(e) {
+                input.value = this.getElementsByTagName("input")[1].value;
+                idInput.value = this.getElementsByTagName("input")[0].value;
+                closeAllLists();
+            });
+            listDiv.appendChild(div);
+        });
+    });
+
+    input.addEventListener("keydown", function(e) {
+        let x = document.getElementById(this.id + "autocomplete-list");
+        if (x) x = x.getElementsByTagName("div");
+        if (e.keyCode == 40) { // Down
+            currentFocus++;
+            addActive(x);
+        } else if (e.keyCode == 38) { // Up
+            currentFocus--;
+            addActive(x);
+        } else if (e.keyCode == 13) { // Enter
+            e.preventDefault();
+            if (currentFocus > -1) {
+                if (x) x[currentFocus].click();
+            }
+        }
+    });
+
+    function addActive(x) {
+        if (!x) return false;
+        removeActive(x);
+        if (currentFocus >= x.length) currentFocus = 0;
+        if (currentFocus < 0) currentFocus = (x.length - 1);
+        x[currentFocus].classList.add("autocomplete-active");
+    }
+
+    function removeActive(x) {
+        for (var i = 0; i < x.length; i++) {
+            x[i].classList.remove("autocomplete-active");
+        }
+    }
+
+    function closeAllLists(elmnt) {
+        const x = document.getElementsByClassName("autocomplete-items");
+        for (var i = 0; i < x.length; i++) {
+            if (elmnt != x[i] && elmnt != input) {
+                x[i].parentNode.removeChild(x[i]);
+            }
+        }
+    }
+
+    document.addEventListener("click", function (e) {
+        closeAllLists(e.target);
+    });
+}
+
+
 async function addItem() {
     const idInput = document.getElementById('itemIdInput');
     const nameInput = document.getElementById('itemNameInput');
     const item_id = idInput.value;
-    const item_name = nameInput.value;
-    if (!item_id) return;
+
+    // We don't send name anymore, backend looks it up or creates default
+    if (!item_id) {
+        alert("Please select an item from the list.");
+        return;
+    }
 
     const res = await fetch('/api/items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_id, item_name })
+        body: JSON.stringify({ item_id: parseInt(item_id) })
     });
 
     if (res.ok) {
@@ -318,13 +436,15 @@ async function addItem() {
         nameInput.value = '';
         loadItems();
     } else {
-        alert('Error adding item');
+        const err = await res.json();
+        alert('Error adding item: ' + (err.detail || 'Unknown error'));
     }
 }
 
-async function deleteItem(db_id) {
+async function deleteItem(item_id) {
     if (!confirm('Stop tracking this item?')) return;
-    await fetch(`/api/items/${db_id}`, { method: 'DELETE' });
+    // Updated to use item_id instead of db_id
+    await fetch(`/api/items/${item_id}`, { method: 'DELETE' });
     loadItems();
 }
 
@@ -336,7 +456,7 @@ function renderSettingsItems(items) {
         div.className = 'settings-list-item';
         div.innerHTML = `
         <span>${item.item_name} [${item.item_id}]</span>
-        <button class="btn-danger" onclick="deleteItem(${item.id})">Remove</button>
+        <button class="btn-danger" onclick="deleteItem(${item.item_id})">Remove</button>
     `;
         list.appendChild(div);
     });

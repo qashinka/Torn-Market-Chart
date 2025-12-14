@@ -8,12 +8,19 @@ class ApiKey(Base):
     key = Column(String(255), unique=True, nullable=False)
     is_active = Column(Boolean, default=True)
 
+class ItemDefinition(Base):
+    __tablename__ = 'all_items'
+    item_id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(255), nullable=False)
+
 class TrackedItem(Base):
     __tablename__ = 'tracked_items'
-    id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(Integer, nullable=False, unique=True)
-    item_name = Column(String(255), nullable=False)
+    # removed id, item_id is now PK
+    item_id = Column(Integer, ForeignKey('all_items.item_id'), primary_key=True, index=True)
+    # removed item_name, accessed via relationship
     is_active = Column(Boolean, default=True)
+
+    item_def = relationship("ItemDefinition")
 
 class PriceLog(Base):
     __tablename__ = 'price_logs'

@@ -1,4 +1,4 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 
 # ApiKey Schemas
@@ -14,17 +14,23 @@ class ApiKeyResponse(ApiKeyBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+# Item Definition Schemas
+class ItemDefinitionResponse(BaseModel):
+    item_id: int
+    name: str
+
+    model_config = ConfigDict(from_attributes=True)
+
 # TrackedItem Schemas
 class TrackedItemBase(BaseModel):
     item_id: int
-    item_name: Optional[str] = None
 
 class TrackedItemCreate(TrackedItemBase):
     pass
 
 class TrackedItemResponse(TrackedItemBase):
-    id: int
-    item_name: str
+    # item_id is inherited
+    item_name: str # We need to populate this manually or via a property if using ORM mode
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
