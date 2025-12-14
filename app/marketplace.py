@@ -102,15 +102,8 @@ class MarketResponse:
 
 def fetch_bazaar_data(item_id: int) -> Optional[MarketResponse]:
     """
-    既存関数: Bazaarデータを取得 (weav3r.dev)
+    Bazaarデータを取得 (weav3r.dev)
     """
-    url = f"https://weav3r.dev/api/marketplace/{item_id}"
-    
-    headers = {
-        'Host': 'weav3r.dev',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0',
-    }
-
     url = f"https://weav3r.dev/api/marketplace/{item_id}"
     try:
         response = cffi_requests.get(url, impersonate="chrome")
@@ -123,7 +116,7 @@ def fetch_bazaar_data(item_id: int) -> Optional[MarketResponse]:
 
 def fetch_item_market_data(item_id: int, api_key: str) -> List[Listing]:
     """
-    新規関数: Item Marketデータを取得 (api.torn.com v2)
+    Item Marketデータを取得 (api.torn.com v2)
     """
     if not api_key or api_key == "TORN_API_KEY":
         print("[Item Market] APIキーが設定されていないため、スキップします。")
