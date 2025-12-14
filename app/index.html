@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torn City Price Tracker</title>
+    <!-- Use specific v4.1.1 version known to work -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+            --success: #10b981;
+            --border: #334155;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* Header */
+        header {
+            padding: 1rem 2rem;
+            background-color: var(--bg-card);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        /* Layout */
+        .container {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* Sidebar - Item List */
+        .sidebar {
+            width: 250px;
+            background-color: var(--bg-card);
+            border-right: 1px solid var(--border);
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .item-list {
+            list-style: none;
+        }
+
+        .item-list li {
+            padding: 0.75rem 1rem;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+            transition: background 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .item-list li:hover {
+            background-color: rgba(59, 130, 246, 0.1);
+        }
+
+        .item-list li.active {
+            background-color: rgba(59, 130, 246, 0.2);
+            border-left: 3px solid var(--accent);
+        }
+
+        /* Main Content - Chart */
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+        }
+
+        .chart-toolbar {
+            display: flex;
+            gap: 1rem;
+            align-items: center;
+            background: var(--bg-card);
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border);
+            flex-wrap: wrap;
+        }
+
+        .chart-toolbar select {
+            padding: 0.35rem;
+            border-radius: 4px;
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            border: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+
+        .toolbar-group {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            border-left: 1px solid var(--border);
+            padding-left: 1rem;
+        }
+
+        .toolbar-group:first-child {
+            border-left: none;
+            padding-left: 0;
+        }
+
+        .chart-container {
+            position: relative;
+            flex: 1;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Settings Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.7);
+            z-index: 100;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            padding: 2rem;
+            border-radius: 0.75rem;
+            width: 500px;
+            max-width: 90%;
+            max-height: 90vh;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        }
+
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 1.5rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        /* Forms & Lists in Settings */
+        .form-group {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        input {
+            flex: 1;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            border: 1px solid var(--border);
+            background: var(--bg-dark);
+            color: var(--text-primary);
+        }
+
+        button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.25rem;
+            border: none;
+            cursor: pointer;
+            font-weight: 500;
+            transition: opacity 0.2s;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            background: var(--accent-hover);
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.8rem;
+        }
+
+        .settings-list {
+            margin-bottom: 2rem;
+            max-height: 150px;
+            overflow-y: auto;
+            border: 1px solid var(--border);
+            border-radius: 0.25rem;
+        }
+
+        .settings-list-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.5rem;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.9rem;
+        }
+
+        .settings-list-item:last-child {
+            border-bottom: none;
+        }
+
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Torn Market Tracker</h1>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-primary" onclick="openSettings()">Settings</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">Tracked Items</div>
+            <ul class="item-list" id="itemList">
+                <!-- Items loaded via JS -->
+            </ul>
+        </div>
+        <div class="main-content">
+            <div class="chart-toolbar">
+                <div class="toolbar-group">
+                    <label>Timeframe:</label>
+                    <select id="timeframeSelect" onchange="updateChartRaw()">
+                        <option value="1">1 Min (Raw)</option>
+                        <option value="5">5 Min</option>
+                        <option value="15">15 Min</option>
+                        <option value="30">30 Min</option>
+                        <option value="60">1 Hour</option>
+                        <option value="240">4 Hour</option>
+                        <option value="1440">1 Day</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-group">
+                    <label>Type:</label>
+                    <select id="chartTypeSelect" onchange="updateChartRaw()">
+                        <option value="Line">Line Chart</option>
+                        <option value="Candlestick">Candlestick</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-group" style="margin-left:auto;">
+                    <div style="display: flex; gap: 0.8rem;">
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkBazaarMin" checked onchange="toggleSeries()">
+                            <span style="color:#10b981;">Bazaar Min</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkBazaarAvg" checked onchange="toggleSeries()">
+                            <span style="color:#14b8a6;">Avg</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkMarketMin" checked onchange="toggleSeries()">
+                            <span style="color:#3b82f6;">Market Min</span>
+                        </label>
+                        <label style="cursor:pointer; display:flex; align-items:center; gap:4px;">
+                            <input type="checkbox" id="checkMarketAvg" checked onchange="toggleSeries()">
+                            <span style="color:#6366f1;">Avg</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div id="loading"
+                    style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color: var(--text-secondary);">
+                    Select an item to view price history</div>
+                <div id="chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Configuration</h3>
+                <button class="close-btn" onclick="closeSettings()">&times;</button>
+            </div>
+
+            <h2>API Keys</h2>
+            <div class="form-group">
+                <input type="text" id="apiKeyInput" placeholder="Enter Torn API Key">
+                <button class="btn-primary" onclick="addApiKey()">Add</button>
+            </div>
+            <div class="settings-list" id="apiKeyList">
+                <!-- Keys loaded via JS -->
+            </div>
+
+            <h2>Tracked Items</h2>
+            <div class="form-group">
+                <input type="number" id="itemIdInput" placeholder="Item ID">
+                <input type="text" id="itemNameInput" placeholder="Item Name (Optional)">
+                <button class="btn-primary" onclick="addItem()">Track</button>
+            </div>
+            <div class="settings-list" id="trackedItemList">
+                <!-- Items loaded via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/main.js"></script>
+</body>
+
+</html>

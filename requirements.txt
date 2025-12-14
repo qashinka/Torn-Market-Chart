@@ -1,7 +1,9 @@
-Flask
-Flask-SQLAlchemy
-APScheduler
+fastapi
+uvicorn[standard]
+sqlalchemy
+apscheduler
 requests
-curl-cffi
+cloudscraper
 pymysql
 cryptography
+jinja2
