@@ -167,7 +167,7 @@ h1 {
     width: 500px;
     max-width: 90%;
     max-height: 90vh;
-    overflow-y: auto;
+    overflow: visible;
     border: 1px solid var(--border);
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }
