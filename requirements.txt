@@ -3,6 +3,6 @@ uvicorn[standard]
 sqlalchemy
 apscheduler
 requests
-cloudscraper
 pymysql
 cryptography
+curl_cffi

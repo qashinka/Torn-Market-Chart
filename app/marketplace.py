@@ -1,6 +1,6 @@
 import requests
-import cloudscraper
 from typing import List, Optional, Union, Dict
+from curl_cffi import requests as cffi_requests
 
 TORN_API_KEY = "TORN_API_KEY"
 
@@ -111,16 +111,15 @@ def fetch_bazaar_data(item_id: int) -> Optional[MarketResponse]:
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:145.0) Gecko/20100101 Firefox/145.0',
     }
 
-    # Ensure the scraper session is closed after use
-    with cloudscraper.create_scraper() as scraper:
-        try:
-            response = scraper.get(url, headers=headers)
-            response.raise_for_status()
-            data = response.json()
-            return MarketResponse.from_dict(data)
-        except Exception as e:
-            print(f"[Bazaar] エラー発生: {e}")
-            return None
+    url = f"https://weav3r.dev/api/marketplace/{item_id}"
+    try:
+        response = cffi_requests.get(url, impersonate="chrome")
+        response.raise_for_status()
+        data = response.json()
+        return MarketResponse.from_dict(data)
+    except Exception as e:
+        print(f"[Bazaar] Error fetching item {item_id}: {e}")
+        return None
 
 def fetch_item_market_data(item_id: int, api_key: str) -> List[Listing]:
     """
