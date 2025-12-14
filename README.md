@@ -1,52 +1,52 @@
 # Torn Market Tracker
 
-A web application to track and visualize item prices from Torn City, monitoring both the Bazaar and Item Market.
+Torn Cityのアイテム価格を追跡・可視化するWebアプリケーションです。バザールとアイテムマーケットの両方を監視します。
 
-## Features
+## 機能
 
-- **Price Tracking**: Automatically fetches item prices every minute.
-- **Dual Source Monitoring**: Tracks `Bazaar` and `Item Market` prices separately.
-- **Interactive Charts**:
-    - Selectable timeframes (1 min to 1 day).
-    - Toggle between Line and Candlestick charts.
-    - Customizable visibility for Min/Avg prices.
-- **Dockerized**: Easy deployment with Docker Compose.
-- **MySQL Support**: Robust data storage using MySQL 8.0.
+- **価格追跡**: 1分ごとにアイテム価格を自動的に取得します。
+- **デュアルソース監視**: `バザール`と`アイテムマーケット`の価格を個別に追跡します。
+- **インタラクティブなチャート**:
+    - 選択可能な時間枠（1分から1日）。
+    - ラインチャートとローソク足チャートの切り替え。
+    - 最小価格/平均価格の表示カスタマイズ。
+- **Docker化**: Docker Composeを使用して簡単にデプロイできます。
+- **データベースサポート**: MySQL 8.0（Docker環境）およびSQLiteをサポートします。
 
-## Tech Stack
+## 技術スタック
 
-- **Backend**: Python (Flask), SQLAlchemy, APScheduler
-- **Frontend**: HTML5, Vanilla JS, TradingView Lightweight Charts
-- **Database**: MySQL 8.0
-- **Containerization**: Docker, Docker Compose
+- **バックエンド**: Python (FastAPI), SQLAlchemy, APScheduler, Cloudscraper
+- **フロントエンド**: HTML5, Vanilla JS, TradingView Lightweight Charts
+- **データベース**: MySQL 8.0 (または SQLite)
+- **コンテナ化**: Docker, Docker Compose
 
-## Setup & Running
+## セットアップと実行
 
-1. **Clone the repository:**
+1. **リポジトリのクローン:**
    ```bash
    git clone <repository-url>
    cd torn-market-tracker
    ```
 
-2. **Start with Docker Compose:**
+2. **Docker Composeで開始:**
    ```bash
    docker-compose up --build -d
    ```
 
-3. **Access the application:**
-   Open your browser and navigate to `http://localhost:5000`.
+3. **アプリケーションへのアクセス:**
+   ブラウザを開き、`http://localhost:5000`にアクセスします。
 
-4. **Configuration:**
-   - Click "Settings" in the UI.
-   - Add your **Torn API Key**.
-   - Add items to track by their ID (e.g., Xanax ID is `206`).
+4. **設定:**
+   - UIの「Settings」をクリックします。
+   - **Torn API Key**を追加します。
+   - 追跡するアイテムをIDで追加します（例：XanaxのIDは`206`です）。
 
-## Development
+## 開発
 
-- The backend is located in `app.py`.
-- Frontend templates are in `templates/index.html`.
-- Background tasks are handled by `APScheduler` within the Flask app.
+- バックエンドのエントリーポイントは `app/main.py` です。
+- フロントエンドは `app/index.html` と `app/static/` にあります。
+- バックグラウンドタスクは `app/main.py` 内の `APScheduler` によって処理されます。
 
-## License
+## ライセンス
 
 MIT

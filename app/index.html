@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Torn City Price Tracker</title>
+    <!-- Use specific v4.1.1 version known to work -->
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        /* Autocomplete Styles */
+        .autocomplete-container {
+            position: relative;
+            display: inline-block;
+            width: 100%;
+        }
+
+        .autocomplete-items {
+            position: absolute;
+            border: 1px solid var(--border);
+            border-top: none;
+            z-index: 99;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background-color: var(--bg-card);
+            color: var(--text-primary);
+            max-height: 200px;
+            overflow-y: auto;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            border-radius: 0 0 0.5rem 0.5rem;
+        }
+
+        .autocomplete-items div {
+            padding: 10px;
+            cursor: pointer;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .autocomplete-items div:hover {
+            background-color: var(--hover-color);
+        }
+
+        .autocomplete-active {
+            background-color: var(--primary-color) !important;
+            color: #ffffff;
+        }
+
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        input[type="number"] { -moz-appearance: textfield; }
+    </style>
+</head>
+
+<body>
+
+    <header>
+        <h1>Torn Market Tracker</h1>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-primary" onclick="openSettings()">Settings</button>
+        </div>
+    </header>
+
+    <div class="container">
+        <div class="sidebar">
+            <div class="sidebar-header">Tracked Items</div>
+            <ul class="item-list" id="itemList">
+                <!-- Items loaded via JS -->
+            </ul>
+        </div>
+        <div class="main-content">
+            <div class="chart-toolbar">
+                <div class="toolbar-group">
+                    <label>Timeframe:</label>
+                    <select id="timeframeSelect" onchange="updateChartRaw()">
+                        <option value="1">1 Min (Raw)</option>
+                        <option value="5">5 Min</option>
+                        <option value="15">15 Min</option>
+                        <option value="30">30 Min</option>
+                        <option value="60">1 Hour</option>
+                        <option value="240">4 Hour</option>
+                        <option value="1440">1 Day</option>
+                    </select>
+                </div>
+
+                <div class="toolbar-group" style="margin-left:auto;">
+                    <button class="btn-primary" onclick="openChartSettings()">Chart Settings</button>
+                </div>
+            </div>
+
+            <div class="chart-container">
+                <div id="loading"
+                    style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color: var(--text-secondary);">
+                    Select an item to view price history</div>
+                <div id="chart"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Configuration</h3>
+                <button class="close-btn" onclick="closeSettings()">&times;</button>
+            </div>
+
+            <h2>API Keys</h2>
+            <div class="form-group">
+                <input type="text" id="apiKeyInput" placeholder="Enter Torn API Key">
+                <button class="btn-primary" onclick="addApiKey()">Add</button>
+            </div>
+            <div class="settings-list" id="apiKeyList">
+                <!-- Keys loaded via JS -->
+            </div>
+
+            <h2>Tracked Items</h2>
+            <div class="form-group">
+                 <div class="autocomplete-container">
+                    <input type="text" id="itemNameInput" placeholder="Search Item Name...">
+                </div>
+                <input type="number" id="itemIdInput" placeholder="ID" readonly style="width: 80px; background-color: var(--bg-color);">
+                <button class="btn-primary" onclick="addItem()">Track</button>
+            </div>
+            <div class="settings-list" id="trackedItemList">
+                <!-- Items loaded via JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart Settings Modal -->
+    <div id="chartSettingsModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Chart Settings</h3>
+                <button class="close-btn" onclick="closeChartSettings()">&times;</button>
+            </div>
+            <div id="chartSettingsContent">
+                <!-- Settings populated via JS -->
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/main.js"></script>
+</body>
+
+</html>
