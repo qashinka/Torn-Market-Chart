@@ -5,13 +5,13 @@ from .database import Base
 class ApiKey(Base):
     __tablename__ = 'api_keys'
     id = Column(Integer, primary_key=True, index=True)
-    key = Column(String(255), unique=True, nullable=False)
+    key = Column(String(32), unique=True, nullable=False)
     is_active = Column(Boolean, default=True)
 
 class ItemDefinition(Base):
     __tablename__ = 'all_items'
     item_id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False)
+    name = Column(String(127), nullable=False)
 
 class TrackedItem(Base):
     __tablename__ = 'tracked_items'
