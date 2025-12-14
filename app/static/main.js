@@ -220,7 +220,17 @@ async function loadItems() {
     list.innerHTML = '';
     items.forEach(item => {
         const li = document.createElement('li');
-        li.textContent = `${item.item_name} (${item.item_id})`;
+
+        const img = document.createElement('img');
+        img.src = `https://www.torn.com/images/items/${item.item_id}/large.png`;
+        img.className = 'item-icon';
+
+        const span = document.createElement('span');
+        span.textContent = `${item.item_name} (${item.item_id})`;
+
+        li.appendChild(img);
+        li.appendChild(span);
+
         li.onclick = () => selectItem(item.item_id, li);
         list.appendChild(li);
     });

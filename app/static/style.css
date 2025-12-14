@@ -77,6 +77,15 @@ h1 {
     border-bottom: 1px solid var(--border);
     transition: background 0.2s;
     font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.item-icon {
+    width: 30px;
+    height: auto;
+    display: block;
 }
 
 .item-list li:hover {
