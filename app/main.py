@@ -75,6 +75,29 @@ def scheduled_price_check():
             b_min, b_avg = calculate_stats(bazaar_listings)
             m_min, m_avg = calculate_stats(market_listings)
 
+            # --- Update Current Listings ---
+            all_listings = bazaar_listings + market_listings
+            all_listings.sort(key=lambda x: x.price)
+            top_5 = all_listings[:5]
+
+            # Clear old listings
+            db.query(models.CurrentListing).filter_by(item_id=item.item_id).delete()
+
+            # Add new listings
+            for lst in top_5:
+                # Listing object doesn't have seller_name for ItemMarket sometimes, handle gracefully
+                # bazaar listings from weav3r.dev have player_name
+                # itemmarket listings from torn api v2 have NO player name usually (unless we query differently, but here we just get listings)
+                # app/marketplace.py: Listing.from_item_market_dict sets player_name="Item Market"
+
+                db.add(models.CurrentListing(
+                    item_id=item.item_id,
+                    price=lst.price,
+                    quantity=lst.quantity,
+                    source=lst.source,
+                    seller_name=lst.player_name
+                ))
+
             # NOTE: We no longer update item name in TrackedItem from Bazaar data
             # because TrackedItem no longer has item_name, it's in ItemDefinition (all_items table)
             # We could update ItemDefinition if we wanted, but let's stick to the periodic full sync for names.
@@ -293,3 +316,95 @@ def get_all_items_definitions(db: Session = Depends(database.get_db)):
 
     items = db.query(models.ItemDefinition).all()
     return items
+
+@app.get("/api/market-depth/{item_id}", response_model=schemas.MarketDepthResponse)
+def get_market_depth(item_id: int, db: Session = Depends(database.get_db)):
+    # 1. Get Top 5 Listings
+    listings = db.query(models.CurrentListing)\
+        .filter_by(item_id=item_id)\
+        .order_by(models.CurrentListing.price.asc())\
+        .limit(5)\
+        .all()
+
+    current_price = listings[0].price if listings else None
+
+    # 2. Calculate 24h Change
+    change_24h = 0.0
+    if current_price:
+        now = time.time()
+        target_time = now - 86400
+
+        # Find the log closest to 24h ago
+        # We can look for logs around that time.
+        # Strategy: Get the first log AFTER target_time - margin (e.g. 1 hour) or BEFORE?
+        # A simple way is to query logs around that time and sort by abs difference.
+        # Efficient way: Get one before and one after, or just the nearest one.
+        # Since we index on timestamp, we can find the one just before or after.
+
+        # Let's try to find the last log BEFORE (or at) target_time + some buffer?
+        # Actually, "closest" usually means absolute difference.
+        # Let's query a range [target_time - 2h, target_time + 2h] and pick closest.
+
+        # Simpler approach: order by ABS(timestamp - target_time) LIMIT 1.
+        # But SQL doesn't do ABS(timestamp - target) efficiently without index on expression or scanning.
+        # Since we have index on timestamp, we can get the latest log <= target_time
+        # and earliest log >= target_time.
+
+        log_before = db.query(models.PriceLog)\
+            .filter(models.PriceLog.item_id == item_id)\
+            .filter(models.PriceLog.timestamp <= target_time)\
+            .order_by(models.PriceLog.timestamp.desc())\
+            .first()
+
+        log_after = db.query(models.PriceLog)\
+            .filter(models.PriceLog.item_id == item_id)\
+            .filter(models.PriceLog.timestamp >= target_time)\
+            .order_by(models.PriceLog.timestamp.asc())\
+            .first()
+
+        reference_log = None
+        if log_before and log_after:
+            if abs(log_before.timestamp - target_time) < abs(log_after.timestamp - target_time):
+                reference_log = log_before
+            else:
+                reference_log = log_after
+        elif log_before:
+            reference_log = log_before
+        elif log_after:
+            reference_log = log_after
+
+        if reference_log:
+            # Prefer bazaar_min, fallback to market_min?
+            # Usually we track "min price".
+            # In PriceLog, we have bazaar_min and market_min.
+            # Which one to compare against?
+            # We should probably take min(bazaar_min, market_min) ignoring Nones.
+
+            p_vals = []
+            if reference_log.bazaar_min is not None:
+                p_vals.append(reference_log.bazaar_min)
+            if reference_log.market_min is not None:
+                p_vals.append(reference_log.market_min)
+
+            if p_vals:
+                old_price = min(p_vals)
+                if old_price > 0:
+                    change_24h = ((current_price - old_price) / old_price) * 100.0
+
+    # 3. Format Listings
+    listing_responses = []
+    for lst in listings:
+        link = f"https://www.torn.com/imarket.php#/p=shop&step=shop&type={item_id}"
+        listing_responses.append(schemas.ListingResponse(
+            price=lst.price,
+            quantity=lst.quantity,
+            source=lst.source,
+            seller_name=lst.seller_name,
+            link=link
+        ))
+
+    return schemas.MarketDepthResponse(
+        current_price=current_price,
+        change_24h=change_24h,
+        listings=listing_responses
+    )

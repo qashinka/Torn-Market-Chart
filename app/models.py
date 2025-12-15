@@ -37,3 +37,14 @@ class PriceLog(Base):
     market_avg = Column(Float, nullable=True)
 
     item = relationship("TrackedItem")
+
+class CurrentListing(Base):
+    __tablename__ = 'current_listings'
+    id = Column(Integer, primary_key=True, index=True)
+    item_id = Column(Integer, ForeignKey('tracked_items.item_id'), nullable=False)
+    price = Column(Integer, nullable=False)
+    quantity = Column(Integer, nullable=False)
+    source = Column(String(20), nullable=False) # "Bazaar" or "ItemMarket"
+    seller_name = Column(String(127), nullable=True)
+
+    item = relationship("TrackedItem")
