@@ -311,23 +311,82 @@ async function selectItem(id, elem) {
     document.getElementById('loading').style.display = 'block';
 
     try {
-        const res = await fetch(`/api/history/${id}`);
-        const data = await res.json();
+        // Fetch History
+        const resHist = await fetch(`/api/history/${id}`);
+        const dataHist = await resHist.json();
+
+        // Fetch Market Depth
+        const resDepth = await fetch(`/api/market-depth/${id}`);
+        const dataDepth = await resDepth.json();
 
         // Store globally so we can resample later
-        rawData = data;
+        rawData = dataHist;
 
         document.getElementById('loading').style.display = 'none';
 
-        if (data.length === 0) {
-            document.getElementById('loading').textContent = 'No data available yet.';
+        if (dataHist.length === 0) {
+            document.getElementById('loading').textContent = 'No chart data available yet.';
             document.getElementById('loading').style.display = 'block';
         } else {
             updateChartRaw(); // This handles processing and rendering
         }
+
+        // Update Order Book & Status
+        updateOrderBookPanel(dataDepth);
+
     } catch (e) {
         console.error(e);
-        alert("Error loading data");
+        // alert("Error loading data");
+    }
+}
+
+function updateOrderBookPanel(data) {
+    const priceEl = document.getElementById('currentPrice');
+    const changeEl = document.getElementById('priceChange');
+    const listEl = document.getElementById('orderBookList');
+
+    if (data.current_price) {
+        priceEl.textContent = `$${data.current_price.toLocaleString()}`;
+    } else {
+        priceEl.textContent = '--';
+    }
+
+    if (data.change_24h !== null && data.change_24h !== undefined) {
+        const val = data.change_24h;
+        const sign = val >= 0 ? '+' : '';
+        changeEl.textContent = `${sign}${val.toFixed(2)}%`;
+
+        changeEl.className = 'price-change';
+        if (val > 0) changeEl.classList.add('positive');
+        else if (val < 0) changeEl.classList.add('negative');
+    } else {
+        changeEl.textContent = '--%';
+        changeEl.className = 'price-change';
+    }
+
+    listEl.innerHTML = '';
+    if (data.listings && data.listings.length > 0) {
+        data.listings.forEach(l => {
+            const li = document.createElement('li');
+            li.className = 'order-book-item';
+
+            // source icon or text could be added
+            // Seller name if bazaar?
+
+            li.innerHTML = `
+                <div style="display:flex; flex-direction:column;">
+                    <span style="font-weight:bold; color:var(--text-primary);">$${l.price.toLocaleString()}</span>
+                    <span style="font-size:0.8rem; color:var(--text-secondary);">${l.source}</span>
+                </div>
+                <div>${l.quantity.toLocaleString()}</div>
+                <div>
+                    <a href="${l.link}" target="_blank" class="buy-btn">BUY</a>
+                </div>
+            `;
+            listEl.appendChild(li);
+        });
+    } else {
+        listEl.innerHTML = '<div style="padding:1rem; text-align:center; color:var(--text-secondary);">No active listings</div>';
     }
 }
 
