@@ -46,5 +46,6 @@ class CurrentListing(Base):
     quantity = Column(Integer, nullable=False)
     source = Column(String(20), nullable=False) # "Bazaar" or "ItemMarket"
     seller_name = Column(String(127), nullable=True)
+    player_id = Column(Integer, nullable=True)
 
     item = relationship("TrackedItem")

@@ -95,7 +95,8 @@ def scheduled_price_check():
                     price=lst.price,
                     quantity=lst.quantity,
                     source=lst.source,
-                    seller_name=lst.player_name
+                    seller_name=lst.player_name,
+                    player_id=lst.player_id
                 ))
 
             # NOTE: We no longer update item name in TrackedItem from Bazaar data
@@ -394,7 +395,16 @@ def get_market_depth(item_id: int, db: Session = Depends(database.get_db)):
     # 3. Format Listings
     listing_responses = []
     for lst in listings:
-        link = f"https://www.torn.com/imarket.php#/p=shop&step=shop&type={item_id}"
+        if lst.source == 'ItemMarket':
+            # Item Market URL
+            link = f"https://www.torn.com/page.php?sid=ItemMarket#/market/view=search&itemID={item_id}"
+        elif lst.source == 'Bazaar' and lst.player_id:
+            # Bazaar URL
+            link = f"https://www.torn.com/bazaar.php?userId={lst.player_id}&itemId={item_id}&highlight=1#/"
+        else:
+            # Fallback (old behavior)
+            link = f"https://www.torn.com/imarket.php#/p=shop&step=shop&type={item_id}"
+
         listing_responses.append(schemas.ListingResponse(
             price=lst.price,
             quantity=lst.quantity,
