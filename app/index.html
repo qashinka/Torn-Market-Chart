@@ -71,30 +71,47 @@
             </ul>
         </div>
         <div class="main-content">
-            <div class="chart-toolbar">
-                <div class="toolbar-group">
-                    <label>Timeframe:</label>
-                    <select id="timeframeSelect" onchange="updateChartRaw()">
-                        <option value="1">1 Min (Raw)</option>
-                        <option value="5">5 Min</option>
-                        <option value="15">15 Min</option>
-                        <option value="30">30 Min</option>
-                        <option value="60">1 Hour</option>
-                        <option value="240">4 Hour</option>
-                        <option value="1440">1 Day</option>
-                    </select>
+            <div class="chart-wrapper">
+                <div class="chart-toolbar">
+                    <div class="toolbar-group">
+                        <label>Timeframe:</label>
+                        <select id="timeframeSelect" onchange="updateChartRaw()">
+                            <option value="1">1 Min (Raw)</option>
+                            <option value="5">5 Min</option>
+                            <option value="15">15 Min</option>
+                            <option value="30">30 Min</option>
+                            <option value="60">1 Hour</option>
+                            <option value="240">4 Hour</option>
+                            <option value="1440">1 Day</option>
+                        </select>
+                    </div>
+
+                    <div class="toolbar-group" style="margin-left:auto;">
+                        <button class="btn-primary" onclick="openChartSettings()">Chart Settings</button>
+                    </div>
                 </div>
 
-                <div class="toolbar-group" style="margin-left:auto;">
-                    <button class="btn-primary" onclick="openChartSettings()">Chart Settings</button>
+                <div class="chart-container">
+                    <div id="loading"
+                        style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color: var(--text-secondary);">
+                        Select an item to view price history</div>
+                    <div id="chart"></div>
                 </div>
             </div>
 
-            <div class="chart-container">
-                <div id="loading"
-                    style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); color: var(--text-secondary);">
-                    Select an item to view price history</div>
-                <div id="chart"></div>
+            <div class="order-book-panel">
+                <div class="status-panel">
+                    <div class="current-price" id="currentPrice">--</div>
+                    <div class="price-change" id="priceChange">--%</div>
+                </div>
+                <div class="order-book-header">
+                    <span>Price</span>
+                    <span>Qty</span>
+                    <span></span>
+                </div>
+                <ul class="order-book-list" id="orderBookList">
+                    <!-- Loaded via JS -->
+                </ul>
             </div>
         </div>
     </div>

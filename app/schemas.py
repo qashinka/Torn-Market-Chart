@@ -42,3 +42,16 @@ class PriceLogResponse(BaseModel):
     bazaar_avg: Optional[float]
     market_min: Optional[int]
     market_avg: Optional[float]
+
+# Market Depth Schemas
+class ListingResponse(BaseModel):
+    price: int
+    quantity: int
+    source: str
+    seller_name: Optional[str] = None
+    link: str
+
+class MarketDepthResponse(BaseModel):
+    current_price: Optional[int]
+    change_24h: Optional[float]
+    listings: List[ListingResponse]
