@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -13,6 +13,10 @@ class ItemDefinition(Base):
     item_id = Column(Integer, primary_key=True, index=True)
     name = Column(String(127), nullable=False)
 
+    # Crawler state
+    last_checked = Column(Integer, nullable=True) # Timestamp
+    last_price = Column(Integer, nullable=True)   # Last known price (min of market/bazaar)
+
 class TrackedItem(Base):
     __tablename__ = 'tracked_items'
     # removed id, item_id is now PK
@@ -25,7 +29,7 @@ class TrackedItem(Base):
 class PriceLog(Base):
     __tablename__ = 'price_logs'
     id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(Integer, ForeignKey('tracked_items.item_id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('all_items.item_id'), nullable=False)
     timestamp = Column(Integer, nullable=False)
 
     # Bazaar Stats
@@ -36,7 +40,12 @@ class PriceLog(Base):
     market_min = Column(Integer, nullable=True)
     market_avg = Column(Float, nullable=True)
 
-    item = relationship("TrackedItem")
+    item = relationship("ItemDefinition")
+
+    # Composite index for faster history retrieval
+    __table_args__ = (
+        Index('idx_pricelog_item_time', 'item_id', 'timestamp'),
+    )
 
 class CurrentListing(Base):
     __tablename__ = 'current_listings'
@@ -49,3 +58,8 @@ class CurrentListing(Base):
     player_id = Column(Integer, nullable=True)
 
     item = relationship("TrackedItem")
+
+class SystemConfig(Base):
+    __tablename__ = 'system_config'
+    key = Column(String(50), primary_key=True)
+    value = Column(String(255), nullable=True)
