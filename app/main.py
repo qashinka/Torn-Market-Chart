@@ -174,7 +174,7 @@ def scheduled_price_check():
                     # We want NULLs (never checked) first, then old timestamps.
 
                     crawler_items = db.query(models.ItemDefinition)\
-                        .order_by(models.ItemDefinition.last_checked.asc().nullsfirst())\
+                        .order_by(models.ItemDefinition.last_checked.asc())\
                         .limit(items_to_scan)\
                         .all()
 
