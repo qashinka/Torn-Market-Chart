@@ -1,7 +1,10 @@
 import os
 import time
+import requests
 import logging
 import random
+import itertools
+import math
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -10,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session, joinedload
 from apscheduler.schedulers.background import BackgroundScheduler
+from sqlalchemy import func
 
 from . import models, schemas, database, marketplace
 
@@ -22,12 +26,6 @@ LAST_ITEM_SYNC = 0
 ITEM_SYNC_TTL = 3600
 
 # === Background Task Logic ===
-
-def get_rotated_api_key(db: Session):
-    keys = db.query(models.ApiKey).filter_by(is_active=True).all()
-    if not keys:
-        return None
-    return random.choice(keys).key
 
 def calculate_stats(listings: List[marketplace.Listing]):
     if not listings:
@@ -47,78 +45,194 @@ def calculate_stats(listings: List[marketplace.Listing]):
 def scheduled_price_check():
     """
     Background task to fetch prices and update DB.
+    Prioritizes TrackedItems, then uses remaining capacity to crawl all items.
     """
     logger.info("Starting scheduled price check...")
     db = database.SessionLocal()
     try:
-        tracked_items = db.query(models.TrackedItem).filter_by(is_active=True).all()
-
-        if not tracked_items:
-            logger.info("No items to track.")
+        # 1. Get API Keys
+        api_keys_objs = db.query(models.ApiKey).filter_by(is_active=True).order_by(models.ApiKey.id).all()
+        if not api_keys_objs:
+            logger.warning("No active API keys found.")
             return
 
+        # Round Robin Iterator
+        key_cycle = itertools.cycle([k.key for k in api_keys_objs])
+        total_keys = len(api_keys_objs)
+        max_requests_per_min = total_keys * 100 # Approx limit (ignoring other usage)
+
+        requests_made = 0
+
+        # 2. Priority: Tracked Items
+        tracked_items = db.query(models.TrackedItem).filter_by(is_active=True).all()
+
+        # We need to process tracked items.
+        # But we must respect rate limits.
+        # If tracked items > max_requests, we might throttle?
+        # Ideally, we should distribute tracked items over minutes if they are too many,
+        # but for now, assuming user doesn't track 1000s of items with 1 key.
+
         for item in tracked_items:
-            api_key = get_rotated_api_key(db)
-            if not api_key:
-                logger.warning("No active API keys found.")
-                # Return or continue? Original code returned.
-                return
+            if requests_made >= max_requests_per_min:
+                logger.warning("Rate limit reached processing tracked items.")
+                break # Stop processing to avoid ban
 
-            # Fetch Data using marketplace.py
-            # Note: marketplace.fetch_bazaar_data prints errors, we might want to capture logging better later
-            bazaar_data = marketplace.fetch_bazaar_data(item.item_id)
-            market_listings = marketplace.fetch_item_market_data(item.item_id, api_key)
+            api_key = next(key_cycle)
 
-            bazaar_listings = bazaar_data.listings if bazaar_data else []
+            # Fetch Data
+            try:
+                bazaar_data = marketplace.fetch_bazaar_data(item.item_id) # Using cloudscraper/curl_cffi often doesn't use API key?
+                # Wait, fetch_bazaar_data in marketplace.py usually scrapes or uses public API?
+                # Checking memory: "API key selection logic...". marketplace.py uses API key for ItemMarket?
+                # Let's assume fetch_item_market_data USES the key. fetch_bazaar_data might scrape.
+                # If fetch_bazaar_data scrapes, it doesn't count towards API limit strictly, but IP limit.
+                # But fetch_item_market_data definitely uses API key.
 
-            # --- Separate Calculations ---
-            b_min, b_avg = calculate_stats(bazaar_listings)
-            m_min, m_avg = calculate_stats(market_listings)
+                market_listings = marketplace.fetch_item_market_data(item.item_id, api_key)
+                requests_made += 1 # One API call
 
-            # --- Update Current Listings ---
-            all_listings = bazaar_listings + market_listings
-            all_listings.sort(key=lambda x: x.price)
-            top_5 = all_listings[:5]
+                bazaar_listings = bazaar_data.listings if bazaar_data else []
 
-            # Clear old listings
-            db.query(models.CurrentListing).filter_by(item_id=item.item_id).delete()
+                # Calculate Stats
+                b_min, b_avg = calculate_stats(bazaar_listings)
+                m_min, m_avg = calculate_stats(market_listings)
 
-            # Add new listings
-            for lst in top_5:
-                # Listing object doesn't have seller_name for ItemMarket sometimes, handle gracefully
-                # bazaar listings from weav3r.dev have player_name
-                # itemmarket listings from torn api v2 have NO player name usually (unless we query differently, but here we just get listings)
-                # app/marketplace.py: Listing.from_item_market_dict sets player_name="Item Market"
+                # Update Current Listings (Top 5)
+                all_listings = bazaar_listings + market_listings
+                all_listings.sort(key=lambda x: x.price)
+                top_5 = all_listings[:5]
 
-                db.add(models.CurrentListing(
-                    item_id=item.item_id,
-                    price=lst.price,
-                    quantity=lst.quantity,
-                    source=lst.source,
-                    seller_name=lst.player_name,
-                    player_id=lst.player_id
-                ))
+                db.query(models.CurrentListing).filter_by(item_id=item.item_id).delete()
+                for lst in top_5:
+                    db.add(models.CurrentListing(
+                        item_id=item.item_id,
+                        price=lst.price,
+                        quantity=lst.quantity,
+                        source=lst.source,
+                        seller_name=lst.player_name,
+                        player_id=lst.player_id
+                    ))
 
-            # NOTE: We no longer update item name in TrackedItem from Bazaar data
-            # because TrackedItem no longer has item_name, it's in ItemDefinition (all_items table)
-            # We could update ItemDefinition if we wanted, but let's stick to the periodic full sync for names.
+                # Log Price
+                if b_min is not None or m_min is not None:
+                     new_log = models.PriceLog(
+                        item_id=item.item_id,
+                        timestamp=int(time.time()),
+                        bazaar_min=b_min,
+                        bazaar_avg=b_avg,
+                        market_min=m_min,
+                        market_avg=m_avg
+                    )
+                     db.add(new_log)
 
-            # Save Log (skip if both empty? or just record Nones/Zeroes?)
-            if b_min is None and m_min is None:
-                continue
+                # Also update ItemDefinition crawler state for tracked items
+                item_def = db.query(models.ItemDefinition).filter_by(item_id=item.item_id).first()
+                if item_def:
+                    item_def.last_checked = int(time.time())
+                    # Determine best price for last_price
+                    prices = [p for p in [b_min, m_min] if p is not None]
+                    if prices:
+                        item_def.last_price = min(prices)
 
-            new_log = models.PriceLog(
-                item_id=item.item_id,
-                timestamp=int(time.time()),
-                bazaar_min=b_min,
-                bazaar_avg=b_avg,
-                market_min=m_min,
-                market_avg=m_avg
-            )
-            db.add(new_log)
+            except Exception as e:
+                logger.error(f"Error updating tracked item {item.item_id}: {e}")
 
         db.commit()
+
+        # 3. Crawler: Background Scan
+        # Calculate remaining capacity
+        remaining_requests = max_requests_per_min - requests_made
+
+        if remaining_requests > 0:
+            # Get Config
+            config_duration = db.query(models.SystemConfig).filter(models.SystemConfig.key == "scan_target_hours").first()
+            target_hours = float(config_duration.value) if config_duration and config_duration.value else 24.0
+            if target_hours <= 0: target_hours = 24.0
+
+            config_limit = db.query(models.SystemConfig).filter(models.SystemConfig.key == "crawler_requests_per_key").first()
+            requests_per_key_limit = int(config_limit.value) if config_limit and config_limit.value else 50
+            
+            # Calculate Max Allowed for Crawler based on KEYS
+            # e.g. 3 keys * 50 = 150 requests max for crawler
+            crawler_max_capacity = total_keys * requests_per_key_limit
+            
+            # The actual limit is the MIN of (User Set Limit) and (Actually Remaining API Calls)
+            available_slots = min(remaining_requests, crawler_max_capacity)
+
+            total_items_count = db.query(models.ItemDefinition).count()
+            if total_items_count > 0 and available_slots > 0:
+                # User reported that the scan is slower than the call limit.
+                # Previously we paced the scan to match 'scan_target_hours', but this caused it to run
+                # much slower than the allowed limit if the target duration was long.
+                # Now we fully utilize the available slots (up to the configured crawler_requests_per_key).
+                items_to_scan = available_slots
+
+                if items_to_scan > 0:
+                    # Fetch oldest checked items
+                    # Order by last_checked ASC (NULLs first usually, or use distinct logic)
+                    # In SQL, NULLs usually come first or last depending on DB.
+                    # We want NULLs (never checked) first, then old timestamps.
+
+                    crawler_items = db.query(models.ItemDefinition)\
+                        .order_by(models.ItemDefinition.last_checked.asc().nullsfirst())\
+                        .limit(items_to_scan)\
+                        .all()
+
+                for item_def in crawler_items:
+                    api_key = next(key_cycle)
+                    try:
+                        # For crawler, we only fetch prices.
+                        # Fetch
+                        market_listings = marketplace.fetch_item_market_data(item_def.item_id, api_key)
+                        bazaar_data = marketplace.fetch_bazaar_data(item_def.item_id)
+
+                        # Smart Validation: If either source fails (returns None), skip this item
+                        # This prevents logging partial data (e.g. only high prices because cheap source is down)
+                        # Skipping without updating last_checked means it will be retried next cycle.
+                        if market_listings is None or bazaar_data is None:
+                             logger.warning(f"Skipping item {item_def.item_id} due to fetch failure (Market: {'OK' if market_listings is not None else 'Fail'}, Bazaar: {'OK' if bazaar_data is not None else 'Fail'})")
+                             continue
+
+                        bazaar_listings = bazaar_data.listings
+
+                        b_min, b_avg = calculate_stats(bazaar_listings)
+                        m_min, m_avg = calculate_stats(market_listings)
+
+                        # Determine current best price
+                        prices = [p for p in [b_min, m_min] if p is not None]
+                        current_min = min(prices) if prices else None
+
+                        # Save ALL data if available, regardless of threshold
+                        if b_min is not None or m_min is not None:
+                            new_log = models.PriceLog(
+                                item_id=item_def.item_id,
+                                timestamp=int(time.time()),
+                                bazaar_min=b_min,
+                                bazaar_avg=b_avg,
+                                market_min=m_min,
+                                market_avg=m_avg
+                            )
+                            db.add(new_log)
+
+                        # Update ItemDefinition
+                        item_def.last_checked = int(time.time())
+                        if current_min is not None:
+                            item_def.last_price = current_min
+
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 429:
+                            logger.error(f"Rate limit hit during crawler. Stopping for now.")
+                            # Stop the crawler for this cycle
+                            break 
+                        else:
+                            logger.error(f"Crawler HTTP error item {item_def.item_id}: {e}")
+                    except Exception as e:
+                        logger.error(f"Crawler error item {item_def.item_id}: {e}")
+
+                db.commit()
+
         logger.info("Price check completed.")
+
     except Exception as e:
         logger.error(f"Error in scheduled price check: {e}")
     finally:
@@ -136,8 +250,9 @@ async def lifespan(app: FastAPI):
     if not scheduler.running:
         scheduler.add_job(
             func=scheduled_price_check,
-            trigger="interval",
-            minutes=1,
+            trigger="cron",
+            minute="*",
+            second="0",
             id="price_check_job",
             replace_existing=True
         )
@@ -257,6 +372,80 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):
         return {"success": True}
     raise HTTPException(status_code=404, detail="Not found")
 
+@app.post("/api/items/{item_id}/refresh")
+def refresh_item(item_id: int, db: Session = Depends(database.get_db)):
+    # Find tracked item
+    item = db.query(models.TrackedItem).filter(models.TrackedItem.item_id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not tracked")
+
+    # Get an active API key
+    key_obj = db.query(models.ApiKey).filter_by(is_active=True).first()
+    if not key_obj:
+        raise HTTPException(status_code=400, detail="No active API keys")
+
+    try:
+        api_key = key_obj.key
+
+        # Fetch Data
+        market_listings = marketplace.fetch_item_market_data(item.item_id, api_key)
+        bazaar_data = marketplace.fetch_bazaar_data(item.item_id)
+        
+        # Validation
+        if market_listings is None or bazaar_data is None:
+             raise HTTPException(status_code=502, detail="Failed to fetch data from one or more sources")
+             
+        bazaar_listings = bazaar_data.listings
+
+        # Calculate Stats
+        b_min, b_avg = calculate_stats(bazaar_listings)
+        m_min, m_avg = calculate_stats(market_listings)
+
+        # Update Current Listings (Top 5)
+        all_listings = bazaar_listings + market_listings
+        all_listings.sort(key=lambda x: x.price)
+        top_5 = all_listings[:5]
+
+        db.query(models.CurrentListing).filter_by(item_id=item.item_id).delete()
+        for lst in top_5:
+            db.add(models.CurrentListing(
+                item_id=item.item_id,
+                price=lst.price,
+                quantity=lst.quantity,
+                source=lst.source,
+                seller_name=lst.player_name,
+                player_id=lst.player_id
+            ))
+
+        # Log Price (Always log on manual refresh?)
+        if b_min is not None or m_min is not None:
+                new_log = models.PriceLog(
+                item_id=item.item_id,
+                timestamp=int(time.time()),
+                bazaar_min=b_min,
+                bazaar_avg=b_avg,
+                market_min=m_min,
+                market_avg=m_avg
+            )
+                db.add(new_log)
+        
+        # Update Definition
+        item_def = db.query(models.ItemDefinition).filter_by(item_id=item.item_id).first()
+        if item_def:
+            item_def.last_checked = int(time.time())
+            prices = [p for p in [b_min, m_min] if p is not None]
+            if prices:
+                item_def.last_price = min(prices)
+
+        db.commit()
+        return {"success": True, "message": "Item refreshed"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Manual refresh failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/history/{item_id}", response_model=List[schemas.PriceLogResponse])
 def get_history(item_id: int, db: Session = Depends(database.get_db)):
     logs = db.query(models.PriceLog)\
@@ -287,7 +476,12 @@ def get_all_items_definitions(db: Session = Depends(database.get_db)):
 
     now = time.time()
     if now - LAST_ITEM_SYNC > ITEM_SYNC_TTL:
-        api_key = get_rotated_api_key(db)
+        api_key = None
+        # Manual key fetch since we are in a route
+        key_obj = db.query(models.ApiKey).filter_by(is_active=True).first()
+        if key_obj:
+            api_key = key_obj.key
+
         if api_key:
             try:
                 items_dict = marketplace.fetch_all_items(api_key)
@@ -336,21 +530,6 @@ def get_market_depth(item_id: int, db: Session = Depends(database.get_db)):
         target_time = now - 86400
 
         # Find the log closest to 24h ago
-        # We can look for logs around that time.
-        # Strategy: Get the first log AFTER target_time - margin (e.g. 1 hour) or BEFORE?
-        # A simple way is to query logs around that time and sort by abs difference.
-        # Efficient way: Get one before and one after, or just the nearest one.
-        # Since we index on timestamp, we can find the one just before or after.
-
-        # Let's try to find the last log BEFORE (or at) target_time + some buffer?
-        # Actually, "closest" usually means absolute difference.
-        # Let's query a range [target_time - 2h, target_time + 2h] and pick closest.
-
-        # Simpler approach: order by ABS(timestamp - target_time) LIMIT 1.
-        # But SQL doesn't do ABS(timestamp - target) efficiently without index on expression or scanning.
-        # Since we have index on timestamp, we can get the latest log <= target_time
-        # and earliest log >= target_time.
-
         log_before = db.query(models.PriceLog)\
             .filter(models.PriceLog.item_id == item_id)\
             .filter(models.PriceLog.timestamp <= target_time)\
@@ -375,12 +554,6 @@ def get_market_depth(item_id: int, db: Session = Depends(database.get_db)):
             reference_log = log_after
 
         if reference_log:
-            # Prefer bazaar_min, fallback to market_min?
-            # Usually we track "min price".
-            # In PriceLog, we have bazaar_min and market_min.
-            # Which one to compare against?
-            # We should probably take min(bazaar_min, market_min) ignoring Nones.
-
             p_vals = []
             if reference_log.bazaar_min is not None:
                 p_vals.append(reference_log.bazaar_min)
@@ -418,3 +591,85 @@ def get_market_depth(item_id: int, db: Session = Depends(database.get_db)):
         change_24h=change_24h,
         listings=listing_responses
     )
+
+@app.get("/api/config", response_model=List[schemas.SystemConfigResponse])
+def get_config(db: Session = Depends(database.get_db)):
+    configs = db.query(models.SystemConfig).all()
+    # Ensure default exists if not present?
+    # For now just return what is in DB. Frontend can handle defaults or we seed them.
+    return configs
+
+@app.get("/api/config/{key}", response_model=schemas.SystemConfigResponse)
+def get_config_key(key: str, db: Session = Depends(database.get_db)):
+    config = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
+    if not config:
+        # Return default if known keys?
+        if key == "scan_target_hours":
+             return schemas.SystemConfigResponse(key=key, value="24")
+        if key == "crawler_requests_per_key":
+             return schemas.SystemConfigResponse(key=key, value="50")
+        raise HTTPException(status_code=404, detail="Config not found")
+    return config
+
+@app.post("/api/config/{key}", response_model=schemas.SystemConfigResponse)
+def update_config(key: str, config_data: schemas.SystemConfigUpdate, db: Session = Depends(database.get_db)):
+    config = db.query(models.SystemConfig).filter(models.SystemConfig.key == key).first()
+    if not config:
+        config = models.SystemConfig(key=key, value=config_data.value)
+        db.add(config)
+    else:
+        config.value = config_data.value
+
+    db.commit()
+    db.refresh(config)
+    return config
+
+@app.get("/api/crawler/status", response_model=schemas.CrawlerStatusResponse)
+def get_crawler_status(db: Session = Depends(database.get_db)):
+    """
+    Returns current crawler progress metrics.
+    """
+    total_items = db.query(models.ItemDefinition).count()
+    
+    # Scanned in last 24h
+    now = time.time()
+    day_ago = now - 86400
+    scanned_24h = db.query(models.ItemDefinition).filter(
+        models.ItemDefinition.last_checked >= day_ago
+    ).count()
+
+    items_left = total_items - scanned_24h
+    progress = (scanned_24h / total_items * 100.0) if total_items > 0 else 0.0
+
+    # Config
+    config_duration = db.query(models.SystemConfig).filter(models.SystemConfig.key == "scan_target_hours").first()
+    target_hours = float(config_duration.value) if config_duration and config_duration.value else 24.0
+
+    # Estimate actual speed? (Optional, maybe for next version)
+    # For now, return what we know.
+    
+    # Calculate estimated days to complete 100% based on CURRENT theoretical speed is tricky,
+    # but based on progress we can just return target_hours as reference or N/A
+    # Let's just return configured target.
+
+    return schemas.CrawlerStatusResponse(
+        total_items=total_items,
+        scanned_24h=scanned_24h,
+        items_left=items_left,
+        scan_progress=round(progress, 2),
+        target_hours=target_hours,
+        estimated_days=0.0 # Placeholder or calculate if we track detailed history
+    )
+
+@app.post("/api/crawler/run")
+def run_crawler_now():
+    """
+    Manually triggers the background price check immediately.
+    """
+    if not scheduler.running:
+         raise HTTPException(status_code=503, detail="Scheduler not running")
+    
+    # Run the job immediately
+    scheduler.add_job(scheduled_price_check, 'date')
+    
+    return {"status": "triggered"}

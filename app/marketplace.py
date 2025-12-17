@@ -135,13 +135,16 @@ def fetch_item_market_data(item_id: int, api_key: str) -> List[Listing]:
         data = response.json()
 
         listings_data = data.get("itemmarket", {}).get("listings", [])
-
-        # 辞書リストをListingオブジェクトのリストに変換
         return [Listing.from_item_market_dict(item, item_id) for item in listings_data]
 
+    except requests.exceptions.HTTPError as e:
+        if e.response.status_code == 429:
+             raise e # Let the caller handle rate limits (stop processing)
+        print(f"[Item Market] HTTPエラー: {e}")
+        return None
     except Exception as e:
         print(f"[Item Market] エラー発生: {e}")
-        return []
+        return None
 
 def fetch_all_items(api_key: str) -> Dict[int, str]:
     """Torn APIから全アイテムを取得し、ID:名前の辞書を返す"""

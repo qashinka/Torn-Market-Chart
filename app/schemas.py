@@ -1,6 +1,17 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 
+# System Config
+class SystemConfigBase(BaseModel):
+    key: str
+    value: str
+
+class SystemConfigUpdate(BaseModel):
+    value: str
+
+class SystemConfigResponse(SystemConfigBase):
+    model_config = ConfigDict(from_attributes=True)
+
 # ApiKey Schemas
 class ApiKeyBase(BaseModel):
     key: str
@@ -55,3 +66,12 @@ class MarketDepthResponse(BaseModel):
     current_price: Optional[int]
     change_24h: Optional[float]
     listings: List[ListingResponse]
+
+# Crawler Status Schema
+class CrawlerStatusResponse(BaseModel):
+    total_items: int
+    scanned_24h: int
+    items_left: int
+    scan_progress: float
+    target_hours: float
+    estimated_days: float
