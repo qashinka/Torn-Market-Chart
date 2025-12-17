@@ -2,6 +2,7 @@ import os
 import time
 import logging
 import random
+import itertools
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
@@ -20,14 +21,19 @@ logger = logging.getLogger(__name__)
 # === State ===
 LAST_ITEM_SYNC = 0
 ITEM_SYNC_TTL = 3600
+API_KEY_INDEX = 0
 
 # === Background Task Logic ===
 
 def get_rotated_api_key(db: Session):
-    keys = db.query(models.ApiKey).filter_by(is_active=True).all()
+    global API_KEY_INDEX
+    keys = db.query(models.ApiKey).filter_by(is_active=True).order_by(models.ApiKey.id).all()
     if not keys:
         return None
-    return random.choice(keys).key
+
+    key = keys[API_KEY_INDEX % len(keys)].key
+    API_KEY_INDEX += 1
+    return key
 
 def calculate_stats(listings: List[marketplace.Listing]):
     if not listings:
@@ -57,12 +63,17 @@ def scheduled_price_check():
             logger.info("No items to track.")
             return
 
+        # Fetch keys once for round-robin distribution within this batch
+        api_keys_objs = db.query(models.ApiKey).filter_by(is_active=True).order_by(models.ApiKey.id).all()
+        if not api_keys_objs:
+            logger.warning("No active API keys found.")
+            return
+
+        # Use itertools.cycle to rotate through keys for the items
+        key_cycle = itertools.cycle([k.key for k in api_keys_objs])
+
         for item in tracked_items:
-            api_key = get_rotated_api_key(db)
-            if not api_key:
-                logger.warning("No active API keys found.")
-                # Return or continue? Original code returned.
-                return
+            api_key = next(key_cycle)
 
             # Fetch Data using marketplace.py
             # Note: marketplace.fetch_bazaar_data prints errors, we might want to capture logging better later
