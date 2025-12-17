@@ -1,6 +1,17 @@
 from pydantic import BaseModel, ConfigDict, Field
 from typing import Optional, List
 
+# System Config
+class SystemConfigBase(BaseModel):
+    key: str
+    value: str
+
+class SystemConfigUpdate(BaseModel):
+    value: str
+
+class SystemConfigResponse(SystemConfigBase):
+    model_config = ConfigDict(from_attributes=True)
+
 # ApiKey Schemas
 class ApiKeyBase(BaseModel):
     key: str

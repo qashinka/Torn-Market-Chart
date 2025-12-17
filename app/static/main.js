@@ -395,6 +395,7 @@ function openSettings() {
     document.getElementById('settingsModal').classList.add('open');
     loadApiKeys();
     loadItems();
+    loadCrawlerSettings();
     // fetchAllItems is now called on DOMContentLoaded
 }
 
@@ -440,6 +441,46 @@ async function deleteKey(id) {
     if (!confirm('Are you sure?')) return;
     await fetch(`/api/keys/${id}`, { method: 'DELETE' });
     loadApiKeys();
+}
+
+// --- Crawler Settings ---
+async function loadCrawlerSettings() {
+    try {
+        const res = await fetch('/api/config/scan_target_hours');
+        if (res.ok) {
+            const data = await res.json();
+            document.getElementById('crawlerTargetHours').value = data.value;
+        } else {
+            // Default
+            document.getElementById('crawlerTargetHours').value = 24;
+        }
+    } catch (e) {
+        console.error("Failed to load crawler settings", e);
+    }
+}
+
+async function saveCrawlerSettings() {
+    const hours = document.getElementById('crawlerTargetHours').value;
+    if (!hours || hours <= 0) {
+        alert("Please enter a valid number of hours.");
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/config/scan_target_hours', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: hours.toString() })
+        });
+        if (res.ok) {
+            alert("Settings saved!");
+        } else {
+            alert("Failed to save settings.");
+        }
+    } catch (e) {
+        console.error("Failed to save crawler settings", e);
+        alert("Error saving settings.");
+    }
 }
 
 // --- Sync & Autocomplete Logic ---

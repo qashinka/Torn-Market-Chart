@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey
+from sqlalchemy import Column, Integer, String, Boolean, Float, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from .database import Base
 
@@ -12,6 +12,10 @@ class ItemDefinition(Base):
     __tablename__ = 'all_items'
     item_id = Column(Integer, primary_key=True, index=True)
     name = Column(String(127), nullable=False)
+
+    # Crawler state
+    last_checked = Column(Integer, nullable=True) # Timestamp
+    last_price = Column(Integer, nullable=True)   # Last known price (min of market/bazaar)
 
 class TrackedItem(Base):
     __tablename__ = 'tracked_items'
@@ -38,6 +42,11 @@ class PriceLog(Base):
 
     item = relationship("TrackedItem")
 
+    # Composite index for faster history retrieval
+    __table_args__ = (
+        Index('idx_pricelog_item_time', 'item_id', 'timestamp'),
+    )
+
 class CurrentListing(Base):
     __tablename__ = 'current_listings'
     id = Column(Integer, primary_key=True, index=True)
@@ -49,3 +58,8 @@ class CurrentListing(Base):
     player_id = Column(Integer, nullable=True)
 
     item = relationship("TrackedItem")
+
+class SystemConfig(Base):
+    __tablename__ = 'system_config'
+    key = Column(String(50), primary_key=True)
+    value = Column(String(255), nullable=True)
