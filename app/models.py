@@ -29,7 +29,7 @@ class TrackedItem(Base):
 class PriceLog(Base):
     __tablename__ = 'price_logs'
     id = Column(Integer, primary_key=True, index=True)
-    item_id = Column(Integer, ForeignKey('tracked_items.item_id'), nullable=False)
+    item_id = Column(Integer, ForeignKey('all_items.item_id'), nullable=False)
     timestamp = Column(Integer, nullable=False)
 
     # Bazaar Stats
@@ -40,7 +40,7 @@ class PriceLog(Base):
     market_min = Column(Integer, nullable=True)
     market_avg = Column(Float, nullable=True)
 
-    item = relationship("TrackedItem")
+    item = relationship("ItemDefinition")
 
     # Composite index for faster history retrieval
     __table_args__ = (

@@ -1,5 +1,6 @@
 import os
 import time
+import requests
 import logging
 import random
 import itertools
@@ -148,17 +149,23 @@ def scheduled_price_check():
             target_hours = float(config_duration.value) if config_duration and config_duration.value else 24.0
             if target_hours <= 0: target_hours = 24.0
 
+            config_limit = db.query(models.SystemConfig).filter(models.SystemConfig.key == "crawler_requests_per_key").first()
+            requests_per_key_limit = int(config_limit.value) if config_limit and config_limit.value else 50
+            
+            # Calculate Max Allowed for Crawler based on KEYS
+            # e.g. 3 keys * 50 = 150 requests max for crawler
+            crawler_max_capacity = total_keys * requests_per_key_limit
+            
+            # The actual limit is the MIN of (User Set Limit) and (Actually Remaining API Calls)
+            available_slots = min(remaining_requests, crawler_max_capacity)
+
             total_items_count = db.query(models.ItemDefinition).count()
-            if total_items_count > 0:
+            if total_items_count > 0 and available_slots > 0:
                 # Items per minute needed
                 items_per_minute_needed = math.ceil(total_items_count / (target_hours * 60))
 
-                # We can process at most remaining_requests
-                # But we should also not process MORE than needed if we want to spread load?
-                # The prompt says: "Use remaining capacity ... based on target scan duration".
-                # It implies we should TRY to meet the target, but bounded by remaining capacity.
-
-                items_to_scan = min(remaining_requests, items_per_minute_needed)
+                # We can process at most available_slots
+                items_to_scan = min(available_slots, items_per_minute_needed)
 
                 if items_to_scan > 0:
                     # Fetch oldest checked items
@@ -171,71 +178,58 @@ def scheduled_price_check():
                         .limit(items_to_scan)\
                         .all()
 
-                    for item_def in crawler_items:
-                        api_key = next(key_cycle)
-                        try:
-                            # For crawler, we only fetch prices.
-                            # Do we save to PriceLog?
-                            # Prompt: "If price change exceeds threshold, save to PriceLog".
+                for item_def in crawler_items:
+                    api_key = next(key_cycle)
+                    try:
+                        # For crawler, we only fetch prices.
+                        # Fetch
+                        market_listings = marketplace.fetch_item_market_data(item_def.item_id, api_key)
+                        bazaar_data = marketplace.fetch_bazaar_data(item_def.item_id)
 
-                            # Fetch
-                            # marketplace.fetch_bazaar_data might be heavy if it scrapes?
-                            # If we assume we want to be lightweight, maybe just ItemMarket?
-                            # Prompt says "cycle through all items...".
-                            # If we use fetch_bazaar_data (scraping), we might hit Cloudflare blocks if too fast.
-                            # But request says "Use remaining API rate limit capacity".
-                            # This implies we are bound by API limit, so we are probably talking about API calls.
-                            # marketplace.fetch_item_market_data uses API.
+                        # Smart Validation: If either source fails (returns None), skip this item
+                        # This prevents logging partial data (e.g. only high prices because cheap source is down)
+                        # Skipping without updating last_checked means it will be retried next cycle.
+                        if market_listings is None or bazaar_data is None:
+                             logger.warning(f"Skipping item {item_def.item_id} due to fetch failure (Market: {'OK' if market_listings is not None else 'Fail'}, Bazaar: {'OK' if bazaar_data is not None else 'Fail'})")
+                             continue
 
-                            market_listings = marketplace.fetch_item_market_data(item_def.item_id, api_key)
-                            # Bazaar?
-                            # If we skip bazaar, we miss data. But bazaar scraping is separate from API limit.
-                            # Let's try to fetch both but be careful.
-                            # If fetch_bazaar_data is blocking or slow, it might delay the loop.
-                            # Let's include it for completeness as per existing logic.
-                            bazaar_data = marketplace.fetch_bazaar_data(item_def.item_id)
-                            bazaar_listings = bazaar_data.listings if bazaar_data else []
+                        bazaar_listings = bazaar_data.listings
 
-                            b_min, b_avg = calculate_stats(bazaar_listings)
-                            m_min, m_avg = calculate_stats(market_listings)
+                        b_min, b_avg = calculate_stats(bazaar_listings)
+                        m_min, m_avg = calculate_stats(market_listings)
 
-                            # Determine current best price
-                            prices = [p for p in [b_min, m_min] if p is not None]
-                            current_min = min(prices) if prices else None
+                        # Determine current best price
+                        prices = [p for p in [b_min, m_min] if p is not None]
+                        current_min = min(prices) if prices else None
 
-                            # Threshold Check
-                            should_log = False
-                            if current_min is not None:
-                                if item_def.last_price is None:
-                                    should_log = True
-                                else:
-                                    # Threshold: e.g. 1% difference? or strict difference?
-                                    # Prompt: "variable threshold".
-                                    # Let's use 2% change.
-                                    change = abs(current_min - item_def.last_price) / item_def.last_price
-                                    if change > 0.02:
-                                        should_log = True
+                        # Save ALL data if available, regardless of threshold
+                        if b_min is not None or m_min is not None:
+                            new_log = models.PriceLog(
+                                item_id=item_def.item_id,
+                                timestamp=int(time.time()),
+                                bazaar_min=b_min,
+                                bazaar_avg=b_avg,
+                                market_min=m_min,
+                                market_avg=m_avg
+                            )
+                            db.add(new_log)
 
-                            if should_log:
-                                new_log = models.PriceLog(
-                                    item_id=item_def.item_id,
-                                    timestamp=int(time.time()),
-                                    bazaar_min=b_min,
-                                    bazaar_avg=b_avg,
-                                    market_min=m_min,
-                                    market_avg=m_avg
-                                )
-                                db.add(new_log)
+                        # Update ItemDefinition
+                        item_def.last_checked = int(time.time())
+                        if current_min is not None:
+                            item_def.last_price = current_min
 
-                            # Update ItemDefinition
-                            item_def.last_checked = int(time.time())
-                            if current_min is not None:
-                                item_def.last_price = current_min
+                    except requests.exceptions.HTTPError as e:
+                        if e.response.status_code == 429:
+                            logger.error(f"Rate limit hit during crawler. Stopping for now.")
+                            # Stop the crawler for this cycle
+                            break 
+                        else:
+                            logger.error(f"Crawler HTTP error item {item_def.item_id}: {e}")
+                    except Exception as e:
+                        logger.error(f"Crawler error item {item_def.item_id}: {e}")
 
-                        except Exception as e:
-                            logger.error(f"Crawler error item {item_def.item_id}: {e}")
-
-                    db.commit()
+                db.commit()
 
         logger.info("Price check completed.")
 
@@ -537,6 +531,8 @@ def get_config_key(key: str, db: Session = Depends(database.get_db)):
         # Return default if known keys?
         if key == "scan_target_hours":
              return schemas.SystemConfigResponse(key=key, value="24")
+        if key == "crawler_requests_per_key":
+             return schemas.SystemConfigResponse(key=key, value="50")
         raise HTTPException(status_code=404, detail="Config not found")
     return config
 

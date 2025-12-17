@@ -446,13 +446,24 @@ async function deleteKey(id) {
 // --- Crawler Settings ---
 async function loadCrawlerSettings() {
     try {
-        const res = await fetch('/api/config/scan_target_hours');
-        if (res.ok) {
-            const data = await res.json();
-            document.getElementById('crawlerTargetHours').value = data.value;
+        // Init Requests
+        const p1 = fetch('/api/config/scan_target_hours');
+        const p2 = fetch('/api/config/crawler_requests_per_key');
+        
+        const [r1, r2] = await Promise.all([p1, p2]);
+
+        if (r1.ok) {
+            const d1 = await r1.json();
+            document.getElementById('crawlerTargetHours').value = d1.value;
         } else {
-            // Default
             document.getElementById('crawlerTargetHours').value = 24;
+        }
+
+        if (r2.ok) {
+            const d2 = await r2.json();
+            document.getElementById('crawlerRequestsPerKey').value = d2.value;
+        } else {
+            document.getElementById('crawlerRequestsPerKey').value = 50;
         }
     } catch (e) {
         console.error("Failed to load crawler settings", e);
@@ -461,21 +472,36 @@ async function loadCrawlerSettings() {
 
 async function saveCrawlerSettings() {
     const hours = document.getElementById('crawlerTargetHours').value;
+    const reqs = document.getElementById('crawlerRequestsPerKey').value;
+
     if (!hours || hours <= 0) {
         alert("Please enter a valid number of hours.");
         return;
     }
+    if (!reqs || reqs <= 0) {
+        alert("Please enter a valid request limit.");
+        return;
+    }
 
     try {
-        const res = await fetch('/api/config/scan_target_hours', {
+        // Save both
+        const p1 = fetch('/api/config/scan_target_hours', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ value: hours.toString() })
         });
-        if (res.ok) {
+        const p2 = fetch('/api/config/crawler_requests_per_key', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ value: reqs.toString() })
+        });
+
+        const [r1, r2] = await Promise.all([p1, p2]);
+
+        if (r1.ok && r2.ok) {
             alert("Settings saved!");
         } else {
-            alert("Failed to save settings.");
+            alert("Failed to save one or more settings.");
         }
     } catch (e) {
         console.error("Failed to save crawler settings", e);
