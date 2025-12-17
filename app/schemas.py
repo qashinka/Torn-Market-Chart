@@ -66,3 +66,12 @@ class MarketDepthResponse(BaseModel):
     current_price: Optional[int]
     change_24h: Optional[float]
     listings: List[ListingResponse]
+
+# Crawler Status Schema
+class CrawlerStatusResponse(BaseModel):
+    total_items: int
+    scanned_24h: int
+    items_left: int
+    scan_progress: float
+    target_hours: float
+    estimated_days: float

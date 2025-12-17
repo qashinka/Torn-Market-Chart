@@ -150,6 +150,21 @@
                 <button class="btn-primary" onclick="saveCrawlerSettings()">Save</button>
             </div>
 
+            <!-- Crawler Status -->
+            <div style="background: rgba(255,255,255,0.05); padding: 10px; border-radius: 4px; margin-bottom: 20px;">
+                <h4 style="margin: 0 0 10px 0;">Current Status (Last 24h)</h4>
+                <div style="display: flex; justify-content: space-between; font-size: 0.9em; margin-bottom: 5px;">
+                    <span id="crawlerProgressText">Loading...</span>
+                    <span id="crawlerScannedText">-- / --</span>
+                </div>
+                <!-- Progress Bar Container -->
+                <div style="width: 100%; background: #334155; height: 10px; border-radius: 5px; overflow: hidden;">
+                    <!-- Bar -->
+                    <div id="crawlerProgressBar"
+                        style="width: 0%; height: 100%; background: #10b981; transition: width 0.5s;"></div>
+                </div>
+            </div>
+
             <h2>Tracked Items</h2>
             <div class="form-group">
                 <div class="autocomplete-container">

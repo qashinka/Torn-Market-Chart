@@ -64,7 +64,11 @@ function initChartBase() {
         timeScale: {
             timeVisible: true,
             secondsVisible: false,
-            // If timeframe is large, switch timeFormat? LWCharts handles auto-scale well.
+        },
+        localization: {
+            // Use browser locale to determine time formatting and timezone offset
+            locale: navigator.language,
+            dateFormat: 'yyyy-MM-dd',
         },
         rightPriceScale: {
             borderColor: '#334155',
@@ -82,14 +86,20 @@ function resampleData(data, intervalMinutes) {
     const intervalSeconds = intervalMinutes * 60;
     const buckets = {};
 
+    // timezone offset in seconds (e.g. JST +9h -> -(-540) * 60 = +32400)
+    // Lightweight charts defaults to UTC, so we shift timestamp to match local wall time.
+    const offsetSeconds = new Date().getTimezoneOffset() * 60 * -1;
+
     data.forEach(point => {
         const timeStr = point.time;
-        const time = Number(timeStr);
+        // Shift raw time to local
+        const time = Number(timeStr) + offsetSeconds;
         const bucketTime = Math.floor(time / intervalSeconds) * intervalSeconds; // floor to nearest bucket
 
         if (!buckets[bucketTime]) {
             buckets[bucketTime] = {
                 time: bucketTime,
+
                 b_min: [], b_avg: [],
                 m_min: [], m_avg: []
             };
@@ -449,9 +459,11 @@ async function loadCrawlerSettings() {
         // Init Requests
         const p1 = fetch('/api/config/scan_target_hours');
         const p2 = fetch('/api/config/crawler_requests_per_key');
-        
-        const [r1, r2] = await Promise.all([p1, p2]);
+        const p3 = fetch('/api/crawler/status');
 
+        const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+
+        // Config 1
         if (r1.ok) {
             const d1 = await r1.json();
             document.getElementById('crawlerTargetHours').value = d1.value;
@@ -459,14 +471,37 @@ async function loadCrawlerSettings() {
             document.getElementById('crawlerTargetHours').value = 24;
         }
 
+        // Config 2
         if (r2.ok) {
             const d2 = await r2.json();
             document.getElementById('crawlerRequestsPerKey').value = d2.value;
         } else {
             document.getElementById('crawlerRequestsPerKey').value = 50;
         }
+
+        // Status
+        if (r3.ok) {
+            const status = await r3.json();
+            // Update UI
+            const pct = status.scan_progress.toFixed(1);
+            document.getElementById('crawlerProgressText').textContent = `${pct}% Complete`;
+            document.getElementById('crawlerScannedText').textContent = `${status.scanned_24h.toLocaleString()} / ${status.total_items.toLocaleString()}`;
+            document.getElementById('crawlerProgressBar').style.width = `${pct}%`;
+
+            // Manual Run Button (Inject if not exists)
+            let btn = document.getElementById('crawlerRunBtn');
+            if (!btn) {
+                const container = document.getElementById('crawlerScannedText').parentNode.parentNode;
+                const div = document.createElement('div');
+                div.style.marginTop = '10px';
+                div.style.textAlign = 'right';
+                div.innerHTML = `<button id="crawlerRunBtn" class="btn-primary" onclick="runCrawlerNow()" style="font-size: 0.8em; padding: 4px 8px;">Run Cycle Now</button>`;
+                container.appendChild(div);
+            }
+        }
+
     } catch (e) {
-        console.error("Failed to load crawler settings", e);
+        console.error("Failed to load crawler settings or status", e);
     }
 }
 
@@ -532,7 +567,7 @@ function setupAutocomplete() {
 
     let currentFocus = -1;
 
-    input.addEventListener("input", function(e) {
+    input.addEventListener("input", function (e) {
         const val = this.value;
         closeAllLists();
         if (!val) return false;
@@ -560,7 +595,7 @@ function setupAutocomplete() {
             div.innerHTML += `<input type='hidden' value='${item.item_id}'>`;
             div.innerHTML += `<input type='hidden' value='${item.name}'>`; // Store name too to fill input
 
-            div.addEventListener("click", function(e) {
+            div.addEventListener("click", function (e) {
                 input.value = this.getElementsByTagName("input")[1].value;
                 idInput.value = this.getElementsByTagName("input")[0].value;
                 closeAllLists();
@@ -569,7 +604,7 @@ function setupAutocomplete() {
         });
     });
 
-    input.addEventListener("keydown", function(e) {
+    input.addEventListener("keydown", function (e) {
         let x = document.getElementById(this.id + "autocomplete-list");
         if (x) x = x.getElementsByTagName("div");
         if (e.keyCode == 40) { // Down
@@ -657,8 +692,47 @@ function renderSettingsItems(items) {
         div.className = 'settings-list-item';
         div.innerHTML = `
         <span>${item.item_name} [${item.item_id}]</span>
-        <button class="btn-danger" onclick="deleteItem(${item.item_id})">Remove</button>
+        <div style="display:flex; gap:5px;">
+            <button class="btn-primary" onclick="refreshItem(${item.item_id})" style="font-size:0.8em; padding:2px 6px;">Scan</button>
+            <button class="btn-danger" onclick="deleteItem(${item.item_id})" style="font-size:0.8em; padding:2px 6px;">Remove</button>
+        </div>
     `;
         list.appendChild(div);
     });
+}
+
+async function runCrawlerNow() {
+    if (!confirm("Run a crawler cycle immediately? This consumes API limits.")) return;
+    try {
+        const res = await fetch('/api/crawler/run', { method: 'POST' });
+        if (res.ok) {
+            alert("Crawler triggered in background.");
+            setTimeout(loadCrawlerSettings, 2000); // Refresh status after a bit
+        } else {
+            alert("Failed to trigger crawler.");
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error triggering crawler");
+    }
+}
+
+async function refreshItem(id) {
+    if (!confirm("Force refresh this item? API limit applies.")) return;
+    try {
+        const res = await fetch(`/api/items/${id}/refresh`, { method: 'POST' });
+        if (res.ok) {
+            alert("Item refreshed due.");
+            // Reload chart if this item is selected?
+            if (currentItemId == id) {
+                selectItem(id);
+            }
+        } else {
+            const d = await res.json();
+            alert("Refresh failed: " + (d.detail || "Unknown"));
+        }
+    } catch (e) {
+        console.error(e);
+        alert("Error refreshing item");
+    }
 }

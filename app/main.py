@@ -371,6 +371,80 @@ def delete_item(item_id: int, db: Session = Depends(database.get_db)):
         return {"success": True}
     raise HTTPException(status_code=404, detail="Not found")
 
+@app.post("/api/items/{item_id}/refresh")
+def refresh_item(item_id: int, db: Session = Depends(database.get_db)):
+    # Find tracked item
+    item = db.query(models.TrackedItem).filter(models.TrackedItem.item_id == item_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not tracked")
+
+    # Get an active API key
+    key_obj = db.query(models.ApiKey).filter_by(is_active=True).first()
+    if not key_obj:
+        raise HTTPException(status_code=400, detail="No active API keys")
+
+    try:
+        api_key = key_obj.key
+
+        # Fetch Data
+        market_listings = marketplace.fetch_item_market_data(item.item_id, api_key)
+        bazaar_data = marketplace.fetch_bazaar_data(item.item_id)
+        
+        # Validation
+        if market_listings is None or bazaar_data is None:
+             raise HTTPException(status_code=502, detail="Failed to fetch data from one or more sources")
+             
+        bazaar_listings = bazaar_data.listings
+
+        # Calculate Stats
+        b_min, b_avg = calculate_stats(bazaar_listings)
+        m_min, m_avg = calculate_stats(market_listings)
+
+        # Update Current Listings (Top 5)
+        all_listings = bazaar_listings + market_listings
+        all_listings.sort(key=lambda x: x.price)
+        top_5 = all_listings[:5]
+
+        db.query(models.CurrentListing).filter_by(item_id=item.item_id).delete()
+        for lst in top_5:
+            db.add(models.CurrentListing(
+                item_id=item.item_id,
+                price=lst.price,
+                quantity=lst.quantity,
+                source=lst.source,
+                seller_name=lst.player_name,
+                player_id=lst.player_id
+            ))
+
+        # Log Price (Always log on manual refresh?)
+        if b_min is not None or m_min is not None:
+                new_log = models.PriceLog(
+                item_id=item.item_id,
+                timestamp=int(time.time()),
+                bazaar_min=b_min,
+                bazaar_avg=b_avg,
+                market_min=m_min,
+                market_avg=m_avg
+            )
+                db.add(new_log)
+        
+        # Update Definition
+        item_def = db.query(models.ItemDefinition).filter_by(item_id=item.item_id).first()
+        if item_def:
+            item_def.last_checked = int(time.time())
+            prices = [p for p in [b_min, m_min] if p is not None]
+            if prices:
+                item_def.last_price = min(prices)
+
+        db.commit()
+        return {"success": True, "message": "Item refreshed"}
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        logger.error(f"Manual refresh failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/history/{item_id}", response_model=List[schemas.PriceLogResponse])
 def get_history(item_id: int, db: Session = Depends(database.get_db)):
     logs = db.query(models.PriceLog)\
@@ -548,3 +622,53 @@ def update_config(key: str, config_data: schemas.SystemConfigUpdate, db: Session
     db.commit()
     db.refresh(config)
     return config
+
+@app.get("/api/crawler/status", response_model=schemas.CrawlerStatusResponse)
+def get_crawler_status(db: Session = Depends(database.get_db)):
+    """
+    Returns current crawler progress metrics.
+    """
+    total_items = db.query(models.ItemDefinition).count()
+    
+    # Scanned in last 24h
+    now = time.time()
+    day_ago = now - 86400
+    scanned_24h = db.query(models.ItemDefinition).filter(
+        models.ItemDefinition.last_checked >= day_ago
+    ).count()
+
+    items_left = total_items - scanned_24h
+    progress = (scanned_24h / total_items * 100.0) if total_items > 0 else 0.0
+
+    # Config
+    config_duration = db.query(models.SystemConfig).filter(models.SystemConfig.key == "scan_target_hours").first()
+    target_hours = float(config_duration.value) if config_duration and config_duration.value else 24.0
+
+    # Estimate actual speed? (Optional, maybe for next version)
+    # For now, return what we know.
+    
+    # Calculate estimated days to complete 100% based on CURRENT theoretical speed is tricky,
+    # but based on progress we can just return target_hours as reference or N/A
+    # Let's just return configured target.
+
+    return schemas.CrawlerStatusResponse(
+        total_items=total_items,
+        scanned_24h=scanned_24h,
+        items_left=items_left,
+        scan_progress=round(progress, 2),
+        target_hours=target_hours,
+        estimated_days=0.0 # Placeholder or calculate if we track detailed history
+    )
+
+@app.post("/api/crawler/run")
+def run_crawler_now():
+    """
+    Manually triggers the background price check immediately.
+    """
+    if not scheduler.running:
+         raise HTTPException(status_code=503, detail="Scheduler not running")
+    
+    # Run the job immediately
+    scheduler.add_job(scheduled_price_check, 'date')
+    
+    return {"status": "triggered"}
