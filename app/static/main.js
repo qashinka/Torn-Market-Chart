@@ -38,12 +38,29 @@ document.addEventListener('DOMContentLoaded', () => {
     // Autocomplete Init
     setupAutocomplete();
 
+    setupAutoRefresh();
+
     new ResizeObserver(entries => {
         if (!chart || entries.length === 0 || entries[0].target !== document.getElementById('chart')) { return; }
         const newRect = entries[0].contentRect;
         chart.applyOptions({ width: newRect.width, height: newRect.height });
     }).observe(document.getElementById('chart'));
 });
+
+function setupAutoRefresh() {
+    // Check every second
+    setInterval(() => {
+        const now = new Date();
+        // If it's the 10th second of the minute (00:00:10, 00:01:10...)
+        // and we have an active item, refresh it.
+        if (now.getSeconds() === 10 && currentItemId) {
+            console.log("Auto-refreshing data...");
+            // Pass true for silent mode (no loading indicator)
+            // Pass null for elem since we don't need to change active class
+            selectItem(currentItemId, null, true);
+        }
+    }, 1000);
+}
 
 function initChartBase() {
     if (chart) return;
@@ -312,13 +329,16 @@ async function loadItems() {
     renderSettingsItems(items);
 }
 
-async function selectItem(id, elem) {
+async function selectItem(id, elem, silent = false) {
     document.querySelectorAll('.item-list li').forEach(el => el.classList.remove('active'));
     if (elem) elem.classList.add('active');
 
     currentItemId = id;
-    document.getElementById('loading').textContent = 'Loading...';
-    document.getElementById('loading').style.display = 'block';
+
+    if (!silent) {
+        document.getElementById('loading').textContent = 'Loading...';
+        document.getElementById('loading').style.display = 'block';
+    }
 
     try {
         // Fetch History
@@ -332,11 +352,15 @@ async function selectItem(id, elem) {
         // Store globally so we can resample later
         rawData = dataHist;
 
-        document.getElementById('loading').style.display = 'none';
+        if (!silent) {
+            document.getElementById('loading').style.display = 'none';
+        }
 
         if (dataHist.length === 0) {
-            document.getElementById('loading').textContent = 'No chart data available yet.';
-            document.getElementById('loading').style.display = 'block';
+            if (!silent) {
+                document.getElementById('loading').textContent = 'No chart data available yet.';
+                document.getElementById('loading').style.display = 'block';
+            }
         } else {
             updateChartRaw(); // This handles processing and rendering
         }

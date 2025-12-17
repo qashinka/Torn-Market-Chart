@@ -161,11 +161,11 @@ def scheduled_price_check():
 
             total_items_count = db.query(models.ItemDefinition).count()
             if total_items_count > 0 and available_slots > 0:
-                # Items per minute needed
-                items_per_minute_needed = math.ceil(total_items_count / (target_hours * 60))
-
-                # We can process at most available_slots
-                items_to_scan = min(available_slots, items_per_minute_needed)
+                # User reported that the scan is slower than the call limit.
+                # Previously we paced the scan to match 'scan_target_hours', but this caused it to run
+                # much slower than the allowed limit if the target duration was long.
+                # Now we fully utilize the available slots (up to the configured crawler_requests_per_key).
+                items_to_scan = available_slots
 
                 if items_to_scan > 0:
                     # Fetch oldest checked items
@@ -250,8 +250,9 @@ async def lifespan(app: FastAPI):
     if not scheduler.running:
         scheduler.add_job(
             func=scheduled_price_check,
-            trigger="interval",
-            minutes=1,
+            trigger="cron",
+            minute="*",
+            second="0",
             id="price_check_job",
             replace_existing=True
         )
