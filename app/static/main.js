@@ -760,3 +760,29 @@ async function refreshItem(id) {
         alert("Error refreshing item");
     }
 }
+
+function switchMobileTab(tabName, navElem) {
+    // 1. Update Nav Active State
+    if (navElem) {
+        document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+        navElem.classList.add('active');
+    }
+
+    // 2. Hide all contents, Show target
+    document.querySelectorAll('.mobile-tab-content').forEach(el => el.classList.remove('active'));
+
+    const targetId = `tab-${tabName}`;
+    const target = document.getElementById(targetId);
+    if (target) {
+        target.classList.add('active');
+
+        // Resize chart if switching to chart tab
+        if (tabName === 'chart' && chart) {
+            // Small timeout to allow display:block to take effect
+            setTimeout(() => {
+                const container = document.getElementById('chart');
+                chart.applyOptions({ width: container.clientWidth, height: container.clientHeight });
+            }, 50);
+        }
+    }
+}

@@ -71,14 +71,16 @@
     </header>
 
     <div class="container">
-        <div class="sidebar">
+        <!-- Sidebar (Items) -->
+        <div class="sidebar mobile-tab-content" id="tab-list">
             <div class="sidebar-header">Tracked Items</div>
             <ul class="item-list" id="itemList">
                 <!-- Items loaded via JS -->
             </ul>
         </div>
         <div class="main-content">
-            <div class="chart-wrapper">
+            <!-- Chart Wrapper (Chart) -->
+            <div class="chart-wrapper mobile-tab-content active" id="tab-chart">
                 <div class="chart-toolbar">
                     <div class="toolbar-group">
                         <label>Timeframe:</label>
@@ -106,7 +108,8 @@
                 </div>
             </div>
 
-            <div class="order-book-panel">
+            <!-- Order Book (Price) -->
+            <div class="order-book-panel mobile-tab-content" id="tab-price">
                 <div class="status-panel">
                     <div class="current-price" id="currentPrice">--</div>
                     <div class="price-change" id="priceChange">--%</div>
@@ -120,6 +123,22 @@
                     <!-- Loaded via JS -->
                 </ul>
             </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Nav -->
+    <div class="mobile-bottom-nav">
+        <div class="nav-item" onclick="switchMobileTab('list', this)">
+            <div class="nav-icon">☰</div>
+            <div>Items</div>
+        </div>
+        <div class="nav-item active" onclick="switchMobileTab('chart', this)">
+            <div class="nav-icon">📈</div>
+            <div>Chart</div>
+        </div>
+        <div class="nav-item" onclick="switchMobileTab('price', this)">
+            <div class="nav-icon">💲</div>
+            <div>Price</div>
         </div>
     </div>
 

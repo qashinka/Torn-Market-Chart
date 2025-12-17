@@ -101,20 +101,24 @@ h1 {
 .main-content {
     flex: 1;
     display: flex;
-    flex-direction: row; /* Split PC */
+    flex-direction: row;
     position: relative;
+    /* Necessary for absolute positioning of children */
     overflow: hidden;
 }
 
-/* Left Panel - Chart (70%) */
+/* Chart takes up the full space now */
 .chart-wrapper {
-    flex: 7;
+    flex: 1;
+    /* Takes full width */
     display: flex;
     flex-direction: column;
-    border-right: 1px solid var(--border);
-    min-width: 0; /* Fix flex overflow issues */
+    min-width: 0;
+    /* No border right needed as panel is overlay */
 }
 
+
+/* Chart Toolbar Styles - Restored */
 .chart-toolbar {
     display: flex;
     gap: 1rem;
@@ -161,19 +165,40 @@ h1 {
     height: 100%;
 }
 
-/* Right Panel - Order Book (30%) */
+/* Right Panel - Order Book (Overlay) - Moved to Left per request */
 .order-book-panel {
-    flex: 3;
-    background: var(--bg-dark);
+    position: absolute;
+    top: 60px;
+    /* Offset to avoid hiding toolbar */
+    left: 0;
+    /* Moved to left */
+    right: auto;
+    bottom: auto;
+    /* Allow height to shrink */
+    max-height: 100%;
+    /* But limit to screen height */
+    width: 320px;
+    background: rgba(18, 18, 18, 0.6);
+    backdrop-filter: blur(8px);
+    border-right: 1px solid rgba(255, 255, 255, 0.1);
+    /* Border on right now */
+    border-left: none;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
+    overflow-y: auto;
+    /* Scroll if too long */
+    z-index: 10;
 }
+
+/* Ensure chart controls stay clickable if they are under the panel?
+   Actually, chart toolbar is at top, panel is full height on right.
+   Chart content under panel might be obscured, but that's expected. */
 
 .status-panel {
     padding: 1.5rem;
-    background: var(--bg-card);
-    border-bottom: 1px solid var(--border);
+    background: transparent;
+    /* Remove solid background */
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
@@ -255,34 +280,119 @@ h1 {
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
-    .container {
-        flex-direction: column; /* Main container is now vertical */
-        overflow: auto;
+    body {
+        /* Account for bottom nav */
+        padding-bottom: 60px;
     }
 
+    .container {
+        flex-direction: column;
+        overflow: hidden;
+        height: calc(100vh - 60px - 60px);
+        /* Total height - header - nav */
+    }
+
+    /* Mobile Bottom Nav */
+    .mobile-bottom-nav {
+        display: flex !important;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        width: 100%;
+        height: 60px;
+        background-color: var(--bg-card);
+        border-top: 1px solid var(--border);
+        z-index: 100;
+        justify-content: space-around;
+        align-items: center;
+    }
+
+    .nav-item {
+        flex: 1;
+        text-align: center;
+        padding: 10px;
+        color: var(--text-secondary);
+        font-size: 0.8rem;
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+    }
+
+    .nav-item.active {
+        color: var(--accent);
+    }
+
+    .nav-icon {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+
+    /* Tab Content Visibility */
+    .mobile-tab-content {
+        display: none !important;
+        width: 100%;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .mobile-tab-content.active {
+        display: flex !important;
+        flex-direction: column;
+    }
+
+    /* Sidebar (Items Tab) */
     .sidebar {
         width: 100%;
-        max-height: 150px; /* Limit sidebar height on mobile */
         border-right: none;
-        border-bottom: 1px solid var(--border);
+        max-height: none;
+        display: none;
+        /* Controlled by JS class active */
     }
 
+    .sidebar.mobile-tab-content.active {
+        display: flex !important;
+    }
+
+    /* Chart (Chart Tab) */
     .main-content {
-        flex-direction: column; /* Stack chart and order book */
-        overflow: visible; /* Allow scrolling */
-        height: auto;
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        display: block;
+        /* Container for chart and separate order book panel */
     }
 
     .chart-wrapper {
-        height: 400px; /* Fixed height for chart on mobile */
-        flex: none;
         border-right: none;
-        border-bottom: 1px solid var(--border);
+        height: 100%;
+        width: 100%;
+        display: none;
+        /* Controlled by JS */
     }
 
+    .chart-wrapper.mobile-tab-content.active {
+        display: flex !important;
+    }
+
+    /* Order Book (Prices Tab) */
     .order-book-panel {
-        flex: none;
-        height: auto;
+        position: static;
+        /* No longer overlay on mobile */
+        width: 100%;
+        height: 100%;
+        background: var(--bg-dark);
+        backdrop-filter: none;
+        border-right: none;
+        display: none;
+        /* Controlled by JS */
+        z-index: 1;
+    }
+
+    .order-book-panel.mobile-tab-content.active {
+        display: flex !important;
     }
 
     .status-panel {
@@ -290,12 +400,24 @@ h1 {
         justify-content: space-between;
         padding: 1rem;
         min-height: auto;
+        background: var(--bg-card);
     }
 
     .current-price {
         font-size: 1.5rem;
     }
+
+    /* Hide desktop-only elements if needed */
+    .desktop-only {
+        display: none;
+    }
 }
+
+/* Base style for nav (hidden on desktop) */
+.mobile-bottom-nav {
+    display: none;
+}
+
 
 /* Settings Modal */
 .modal {
