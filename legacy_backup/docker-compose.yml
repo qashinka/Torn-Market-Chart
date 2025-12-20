@@ -1,0 +1,13 @@
+services:
+  torn-tracker:
+    build: .
+    container_name: torn-tracker
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+    environment:
+      - TZ=Asia/Tokyo
+      - FLASK_DEBUG=1
+      - DATABASE_URL=${DATABASE_URL}
+    restart: unless-stopped
