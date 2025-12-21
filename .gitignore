@@ -1,13 +1,38 @@
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
-*.so
+*.pyc
+
+# Environment
 .env
+.env.local
+.venv
+env/
 venv/
-.venv/
+
+# Logs
+*.log
+worker_logs*.txt
+
+# Project specific
+legacy_backup/
+migrations/
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Node
+node_modules/
+
+# IDE
+.DS_Store
 .idea/
 .vscode/
-*.log
-*.db
-.DS_Store
+
+# Docker volumes (ensure not tracked)
 db_data/
+redis_data/
+
