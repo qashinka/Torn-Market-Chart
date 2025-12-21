@@ -19,6 +19,8 @@ services:
       timeout: 20s
       retries: 10
     restart: unless-stopped
+    profiles:
+      - internal-db
 
   redis:
     image: redis:alpine
@@ -43,8 +45,9 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      db:
-        condition: service_healthy
+      # db dependency removed for external db support. handled by app retry logic.
+      # db:
+      #   condition: service_healthy
       redis:
         condition: service_started
     restart: unless-stopped
@@ -61,8 +64,8 @@ services:
       - TORN_API_KEY=${TORN_API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
     depends_on:
-      db:
-        condition: service_healthy
+      # db:
+      #   condition: service_healthy
       redis:
         condition: service_started
     restart: unless-stopped
@@ -89,6 +92,8 @@ services:
     depends_on:
       - db
     restart: unless-stopped
+    profiles:
+      - internal-db
 
 volumes:
   db_data:

@@ -8,9 +8,21 @@ from app.models import models
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # Create tables on startup with retry logic
+    retries = 5
+    while retries > 0:
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            break
+        except Exception as e:
+            retries -= 1
+            if retries == 0:
+                raise e
+            import logging
+            logging.getLogger("uvicorn").warning(f"Database not ready, retrying in 5 seconds... ({retries} retries left)")
+            import asyncio
+            await asyncio.sleep(5)
     yield
 
 app = FastAPI(title="Torn Market Tracker API", lifespan=lifespan)
