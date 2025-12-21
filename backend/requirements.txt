@@ -1,0 +1,13 @@
+fastapi[all]
+uvicorn[standard]
+sqlalchemy[asyncio]
+asyncmy
+redis
+httpx
+curl_cffi>=0.5.10
+apscheduler
+ruff
+pydantic-settings
+python-multipart
+alembic
+cryptography
