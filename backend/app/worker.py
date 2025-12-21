@@ -3,6 +3,7 @@ import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from datetime import datetime, timedelta
 from app.services.price_service import price_service
 
 # Configure logging
@@ -17,7 +18,17 @@ async def main():
 
     scheduler = AsyncIOScheduler()
 
+    from app.services.item_service import item_service
+
     # Add jobs
+    
+    # 0. Initial Catalog Sync (Run 10s after startup)
+    scheduler.add_job(
+        item_service.sync_item_catalog,
+        'date',
+        run_date=datetime.now() + timedelta(seconds=10),
+        id="initial_sync_catalog"
+    )
 
     # 1. Fetch Prices every minute at 00 seconds
     scheduler.add_job(

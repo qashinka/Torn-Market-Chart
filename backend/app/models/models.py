@@ -14,11 +14,17 @@ class Item(Base):
 
     # Tracking status
     is_tracked = Column(Boolean, default=False)
+    failure_count = Column(Integer, default=0)
 
     # Last known prices (cached for quick access)
     last_market_price = Column(BigInteger, nullable=True)
     last_bazaar_price = Column(BigInteger, nullable=True)
+    last_market_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
+    last_bazaar_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
     last_updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Order book snapshot (Top 5 listings for each market, JSON format)
+    orderbook_snapshot = Column(Text, nullable=True)  # Stores JSON: {"market": [...], "bazaar": [...]}
 
     price_logs = relationship("PriceLog", back_populates="item", cascade="all, delete-orphan")
     alerts = relationship("PriceAlert", back_populates="item", cascade="all, delete-orphan")
@@ -36,6 +42,8 @@ class PriceLog(Base):
 
     market_price = Column(BigInteger, nullable=True)
     bazaar_price = Column(BigInteger, nullable=True)
+    market_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
+    bazaar_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
 
     item = relationship("Item", back_populates="price_logs")
 

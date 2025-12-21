@@ -1,9 +1,11 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 
 import { PriceChart } from './PriceChart';
 import { AutocompleteInput } from './AutocompleteInput';
+import { OrderBookButton } from './OrderBookButton';
 import { getItems, getHistory, Item, PricePoint } from '@/lib/api';
+import { calculateMovingAverage } from '@/lib/stats';
 
 export function Dashboard() {
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
@@ -20,6 +22,15 @@ export function Dashboard() {
         queryFn: () => getHistory(selectedItemId!),
         enabled: !!selectedItemId
     });
+
+    const enrichedHistory = useMemo(() => {
+        if (!history) return undefined;
+        return calculateMovingAverage(history, 24);
+    }, [history]);
+
+    const latestPoint = enrichedHistory && enrichedHistory.length > 0
+        ? enrichedHistory[enrichedHistory.length - 1]
+        : null;
 
     // Determine currently displayed item: check tracking list first, then temporary state
     const currentItem = items?.find(i => i.id === selectedItemId) || (selectedItemId === temporaryItem?.id ? temporaryItem : null);
@@ -87,22 +98,55 @@ export function Dashboard() {
                                     {currentItem.name}
                                     {!items?.find(i => i.id === currentItem.id) && <span className="ml-2 text-xs bg-yellow-900 text-yellow-200 px-2 py-0.5 rounded">Temporary</span>}
                                 </h1>
-                                <p className="text-sm text-gray-400">
-                                    ID: {currentItem.torn_id}
-                                </p>
-                            </div>
-                            <div className="flex gap-4">
-                                <div className="text-right">
-                                    <p className="text-xs text-gray-500 uppercase">Latest Market</p>
-                                    <p className="text-xl font-mono text-green-400 font-bold">
-                                        ${currentItem.last_market_price?.toLocaleString() ?? '-'}
+                                <div className="flex items-center gap-3">
+                                    <p className="text-sm text-gray-400">
+                                        ID: {currentItem.torn_id}
                                     </p>
+                                    <OrderBookButton itemId={currentItem.torn_id} itemName={currentItem.name} />
                                 </div>
-                                <div className="text-right border-l border-zinc-700 pl-4">
-                                    <p className="text-xs text-gray-500 uppercase">Latest Bazaar</p>
-                                    <p className="text-xl font-mono text-blue-400 font-bold">
-                                        ${currentItem.last_bazaar_price?.toLocaleString() ?? '-'}
-                                    </p>
+                            </div>
+                            <div className="flex gap-6">
+                                <div className="text-right">
+                                    <p className="text-xs text-green-500 uppercase tracking-wider mb-1">Item Market</p>
+                                    <div className="flex items-baseline justify-end gap-2">
+                                        <span className="text-xs text-zinc-500">Low</span>
+                                        <span className="text-xl font-mono text-green-400 font-bold">
+                                            ${currentItem.last_market_price?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-baseline justify-end gap-2">
+                                        <span className="text-xs text-zinc-500">Avg</span>
+                                        <span className="text-sm font-mono text-green-600/80">
+                                            ${currentItem.last_market_price_avg?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-baseline justify-end gap-2 mt-1">
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">24h Trend</span>
+                                        <span className="text-sm font-mono text-fuchsia-400">
+                                            ${latestPoint?.market_price_ma?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div className="text-right border-l border-zinc-800 pl-6">
+                                    <p className="text-xs text-blue-500 uppercase tracking-wider mb-1">Bazaar</p>
+                                    <div className="flex items-baseline justify-end gap-2">
+                                        <span className="text-xs text-zinc-500">Low</span>
+                                        <span className="text-xl font-mono text-blue-400 font-bold">
+                                            ${currentItem.last_bazaar_price?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-baseline justify-end gap-2">
+                                        <span className="text-xs text-zinc-500">Avg</span>
+                                        <span className="text-sm font-mono text-blue-600/80">
+                                            ${currentItem.last_bazaar_price_avg?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
+                                    <div className="flex items-baseline justify-end gap-2 mt-1">
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">24h Trend</span>
+                                        <span className="text-sm font-mono text-orange-400">
+                                            ${latestPoint?.bazaar_price_ma?.toLocaleString() ?? '-'}
+                                        </span>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -111,7 +155,6 @@ export function Dashboard() {
                             {history && history.length > 0 ? (
                                 <PriceChart
                                     data={history}
-                                    title=""
                                 />
                             ) : (
                                 <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center text-gray-500">

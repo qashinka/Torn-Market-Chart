@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import select, insert
 from app.db.database import SessionLocal
 from app.models.models import Item, PriceLog
@@ -49,15 +49,77 @@ class PriceService:
             # 1. Update Tracked Items
             # 2. If count < rate_limit, fetch Untracked Items (oldest updated first) and update them.
             
-            items_to_process = list(tracked_items)
-            tracked_count = len(items_to_process)
+            items_to_process = []
+            now_utc = datetime.utcnow()
             
-            if tracked_count < rate_limit:
-                remaining_capacity = rate_limit - tracked_count
-                logger.info(f"Tracked items: {tracked_count}. Spare capacity: {remaining_capacity}. Fetching untracked items...")
+            # Backoff Strategy Constants
+            FAILURE_THRESHOLD_LOW = 5   # If failures >= 5, check every 10 min
+            FAILURE_THRESHOLD_HIGH = 20 # If failures >= 20, check every 60 min
+            BACKOFF_LOW_MINUTES = 10
+            BACKOFF_HIGH_MINUTES = 60
+            
+            # Filter Tracked Items
+            # Always fetch tracked items (User requirement: prioritization)
+            for item in tracked_items:
+                items_to_process.append(item)
+
+            tracked_count_filtered = len(items_to_process)
+            
+            if tracked_count_filtered < rate_limit:
+                remaining_capacity = rate_limit - tracked_count_filtered
+                logger.info(f"Tracked items: {tracked_count_filtered}. Spare capacity: {remaining_capacity}. Fetching untracked items...")
                 
-                # Fetch untracked items, sorted by last_updated_at ASC (oldest first)
-                stmt = select(Item).where(Item.is_tracked == False).order_by(Item.last_updated_at.asc()).limit(remaining_capacity)
+                # Fetch untracked items
+                # Exclude items that satisfy the backoff condition:
+                # (FC >= HIGH and Updated > Now - 60m) OR (FC >= LOW and Updated > Now - 10m)
+                
+                # In SQL logic for Exclusion:
+                # WHERE is_tracked = False AND NOT ( ... )
+                
+                # Since we want to update checking often, constructing this query:
+                from sqlalchemy import or_, and_
+                
+                limit_high = now_utc - timedelta(minutes=BACKOFF_HIGH_MINUTES)
+                limit_low = now_utc - timedelta(minutes=BACKOFF_LOW_MINUTES)
+                
+                # Condition for items TO IGNORE (Backoff active)
+                # Ignore if: (Fail >= High AND LastUpd > limit_high) OR (Fail >= Low AND LastUpd > limit_low)
+                
+                # So we select items where NOT that condition.
+                # De Morgan's:
+                # Select where:
+                # (Fail < High OR LastUpd <= limit_high) AND (Fail < Low OR LastUpd <= limit_low)
+                
+                # Simpler:
+                # is_tracked == False
+                # AND (failure_count < LOW OR last_updated_at <= limit_low) 
+                # AND (failure_count < HIGH OR last_updated_at <= limit_high) # Redundant if limit_high < limit_low? 
+                
+                # Actually, simpler to just say:
+                # We want eligible items.
+                # An item is eligible if:
+                # 1. failure_count < LOW
+                # OR
+                # 2. failure_count >= LOW AND failure_count < HIGH AND last_updated_at <= limit_low
+                # OR
+                # 3. failure_count >= HIGH AND last_updated_at <= limit_high
+                
+                stmt = select(Item).where(
+                    Item.is_tracked == False,
+                    or_(
+                        Item.failure_count < FAILURE_THRESHOLD_LOW,
+                        and_(
+                            Item.failure_count >= FAILURE_THRESHOLD_LOW,
+                            Item.failure_count < FAILURE_THRESHOLD_HIGH,
+                            Item.last_updated_at <= limit_low
+                        ),
+                        and_(
+                            Item.failure_count >= FAILURE_THRESHOLD_HIGH,
+                            Item.last_updated_at <= limit_high
+                        )
+                    )
+                ).order_by(Item.last_updated_at.asc()).limit(remaining_capacity)
+                
                 result = await session.execute(stmt)
                 untracked_items = result.scalars().all()
                 items_to_process.extend(untracked_items)
@@ -65,22 +127,11 @@ class PriceService:
             total_items = len(items_to_process)
             logger.info(f"Targeting usage: {rate_limit} req/min. Total items to update in this cycle: {total_items}")
             
-            # Group items into chunks of `rate_limit` size
-            # Since we constructed items_to_process to be <= rate_limit (mostly), 
-            # this loop might just run once or twice depending on how we handle large lists.
-            # Wait, if tracked_items > rate_limit, we still only process `rate_limit` items?
-            # Or do we process ALL tracked items regardless of limit (and take longer)?
-            # The user requirement implies "strict rate limit". So we must cap at rate_limit per minute.
-            
-            # So we slice the list to rate_limit.
+            # Limit strictly to rate limit
             items_to_process = items_to_process[:rate_limit]
-            
-            # Since we are now strictly limiting to `rate_limit` items per cycle (which is 1 min),
-            # check chunking is not really needed for "wait" purposes within the cycle, 
-            # unless we want to spread load? 
-            # Implemented: One big batch or small batches with no wait (since total <= limit).
-            
-            chunk_size = 50 # Internal batching for API calls
+
+            # Chunk Process
+            chunk_size = 50 
             chunks = [items_to_process[i:i + chunk_size] for i in range(0, len(items_to_process), chunk_size)]
             
             processed_count = 0
@@ -95,7 +146,7 @@ class PriceService:
                 logger.info(f"Processing batch {i+1}/{len(chunks)} ({len(chunk_ids)} items)")
                 
                 # Fetch data for this chunk
-                fetched_data = await torn_api_service.get_items(chunk_ids)
+                fetched_data = await torn_api_service.get_items(chunk_ids, include_listings=True)
                 
                 # Save data
                 price_updates = []
@@ -105,24 +156,53 @@ class PriceService:
                     data = fetched_data.get(item.torn_id)
                     market_price = 0
                     bazaar_price = 0
+                    market_price_avg = 0
+                    bazaar_price_avg = 0
+                    status = {}
                     
                     if data:
                         market_price = data.get('market_price', 0)
                         bazaar_price = data.get('bazaar_price', 0)
+                        market_price_avg = data.get('market_price_avg', 0)
+                        bazaar_price_avg = data.get('bazaar_price_avg', 0)
+                        status = data.get('status', {})
                     else:
                         logger.warning(f"Failed to fetch data for item {item.name} ({item.torn_id})")
                     
+                    # Update Failure Count
+                    # Success = API request succeeded (even if price is 0/OOS)
+                    # Failure = API request failed (network error, rate limit, etc.)
+                    if status.get('market') or status.get('bazaar'):
+                        item.failure_count = 0
+                    else:
+                        item.failure_count = (item.failure_count or 0) + 1
+                        if item.failure_count >= FAILURE_THRESHOLD_LOW:
+                             logger.info(f"Item {item.name} ({item.torn_id}) failed {item.failure_count} times (API Error). Backing off.")
+
                     price_updates.append({
                         "item_id": item.id,
                         "timestamp": now,
                         "market_price": market_price,
-                        "bazaar_price": bazaar_price
+                        "bazaar_price": bazaar_price,
+                        "market_price_avg": market_price_avg,
+                        "bazaar_price_avg": bazaar_price_avg
                     })
 
                     # Update Item cache
                     item.last_market_price = market_price
                     item.last_bazaar_price = bazaar_price
+                    item.last_market_price_avg = market_price_avg
+                    item.last_bazaar_price_avg = bazaar_price_avg
                     item.last_updated_at = now
+                    
+                    # Save orderbook snapshot (top 5 for each)
+                    if data and data.get('listings'):
+                        import json
+                        snapshot = {
+                            "market": data['listings'].get('market', [])[:5],
+                            "bazaar": data['listings'].get('bazaar', [])[:5],
+                        }
+                        item.orderbook_snapshot = json.dumps(snapshot)
                 
                 if price_updates:
                     stmt = insert(PriceLog).values(price_updates)

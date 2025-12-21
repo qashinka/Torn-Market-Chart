@@ -139,7 +139,7 @@ class TornApiService:
             logger.error(f"HTTP Error fetching v2 {endpoint}: {e}")
             return None
 
-    async def get_items(self, item_ids: list[int] = None):
+    async def get_items(self, item_ids: list[int] = None, include_listings: bool = False):
         """
         Fetch item details using v2 API for Item Market and weav3r.dev (scraped) for Bazaar.
         Uses asyncio.gather with Semaphore to limit concurrency.
@@ -161,27 +161,74 @@ class TornApiService:
                 # /v2/market/{id}/itemmarket
                 im_data = await self._request_v2(f"market/{item_id}/itemmarket", {"limit": 10, "sort": "price"})
                 lowest_itemmarket = 0
+                lowest_itemmarket_avg = 0
+                
+                itemmarket_listings = []
                 if im_data and 'itemmarket' in im_data and 'listings' in im_data['itemmarket']:
                     listings = im_data['itemmarket']['listings']
                     if listings:
                         lowest_itemmarket = listings[0]['price']
+                        # Calculate Avg of Top 5
+                        prices = [l['price'] for l in listings[:5]]
+                        if prices:
+                            lowest_itemmarket_avg = int(sum(prices) / len(prices))
+                        
+                        if include_listings:
+                            # Extract top 10 listings
+                            for l in listings[:10]:
+                                itemmarket_listings.append({
+                                    "price": l.get('price'),
+                                    "quantity": l.get('quantity'),
+                                    "id": l.get('id'), # listing ID
+                                    "type": "market"
+                                })
+
+                        # DEBUG: Log market data details
+                        logger.info(f"[DEBUG] Item {item_id} Market: Top Price={lowest_itemmarket}, Avg={lowest_itemmarket_avg}, Listings Count={len(listings)}")
+                    else:
+                        logger.warning(f"[DEBUG] Item {item_id} Market: No listings found in response.")
+                else:
+                    logger.warning(f"[DEBUG] Item {item_id} Market: Invalid response structure. Keys: {im_data.keys() if im_data else 'None'}")
 
                 # 2. Fetch Bazaar (weav3r.dev - External Service)
                 # Legacy method with Cloudflare protection bypass
                 lowest_bazaar = 0
+                lowest_bazaar_avg = 0
+                bazaar_listings = []
+
+                success_bazaar = False
+                
                 try:
                     url = f"https://weav3r.dev/api/marketplace/{item_id}"
                     response = await scraper.get(url)
                     
                     if response.status_code == 200:
+                        success_bazaar = True
                         data = response.json()
                         listings = data.get("listings", [])
                         
                         # Find lowest price from listings
                         if listings:
-                             prices = [l.get('price') for l in listings if l.get('price')]
-                             if prices:
-                                 lowest_bazaar = min(prices)
+                             # weav3r format usually: { 'price': ..., 'amount': ..., 'sellerId': ... } or similar?
+                             # Assuming 'price' field exists.
+                             valid_listings = [l for l in listings if l.get('price')]
+                             sorted_listings = sorted(valid_listings, key=lambda x: x.get('price'))
+                             
+                             if sorted_listings:
+                                 lowest_bazaar = sorted_listings[0].get('price')
+                                 # Calculate Avg of Top 5
+                                 top_5 = [l.get('price') for l in sorted_listings[:5]]
+                                 lowest_bazaar_avg = int(sum(top_5) / len(top_5))
+                                 
+                                 if include_listings:
+                                     # Extract top 10
+                                     for l in sorted_listings[:10]:
+                                         bazaar_listings.append({
+                                             "price": l.get('price'),
+                                             "quantity": l.get('amount') or l.get('quantity'), # Check field name
+                                             "id": l.get('seller_id') or l.get('userId'), # bazaar owner ID
+                                             "type": "bazaar"
+                                         })
                     else:
                         logger.warning(f"weav3r.dev returned {response.status_code} for item {item_id}")
                 except Exception as e:
@@ -192,7 +239,17 @@ class TornApiService:
 
                 return item_id, {
                     'market_price': lowest_itemmarket,
-                    'bazaar_price': lowest_bazaar
+                    'bazaar_price': lowest_bazaar,
+                    'market_price_avg': lowest_itemmarket_avg,
+                    'bazaar_price_avg': lowest_bazaar_avg,
+                    'listings': {
+                        'market': itemmarket_listings,
+                        'bazaar': bazaar_listings
+                    } if include_listings else None,
+                    'status': {
+                        'market': im_data is not None,
+                        'bazaar': success_bazaar
+                    }
                 }
 
         # Create a session for scraping (mimic Chrome to bypass Cloudflare)

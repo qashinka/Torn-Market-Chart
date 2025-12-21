@@ -60,6 +60,8 @@ export interface Item {
     is_tracked?: boolean;
     last_market_price?: number;
     last_bazaar_price?: number;
+    last_market_price_avg?: number;
+    last_bazaar_price_avg?: number;
     last_updated_at?: string;
 }
 
@@ -93,6 +95,8 @@ export interface PricePoint {
     timestamp: string;
     market_price: number;
     bazaar_price: number;
+    market_price_avg?: number;
+    bazaar_price_avg?: number;
 }
 
 export const getHistory = async (itemId: number) => {
@@ -100,4 +104,32 @@ export const getHistory = async (itemId: number) => {
     // Backend returns newest first (DESC), but charts usually expect oldest first (Left->Right)
     // or we just want standard time flow Left(Old) -> Right(New).
     return response.data.reverse();
+};
+
+// Order Book / Listings
+export interface Listing {
+    price: number;
+    quantity: number;
+    type: 'market' | 'bazaar';
+    id?: number | string;
+}
+
+export interface OrderBookResponse {
+    market_price: number;
+    bazaar_price: number;
+    market_price_avg: number;
+    bazaar_price_avg: number;
+    listings: {
+        market: Listing[];
+        bazaar: Listing[];
+    };
+    status: {
+        market: boolean;
+        bazaar: boolean;
+    };
+}
+
+export const getOrderBook = async (itemId: number) => {
+    const response = await api.get<OrderBookResponse>(`/items/${itemId}/orderbook`);
+    return response.data;
 };

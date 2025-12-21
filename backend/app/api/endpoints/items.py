@@ -81,7 +81,9 @@ async def get_item_history(item_id: int, db: AsyncSession = Depends(get_db)):
         {
             "timestamp": log.timestamp,
             "market_price": log.market_price,
-            "bazaar_price": log.bazaar_price
+            "bazaar_price": log.bazaar_price,
+            "market_price_avg": log.market_price_avg,
+            "bazaar_price_avg": log.bazaar_price_avg
         }
         for log in logs
     ]
@@ -98,3 +100,42 @@ async def delete_item(item_id: int, db: AsyncSession = Depends(get_db)):
     await db.commit()
     
     return None
+
+@router.get("/{item_id}/orderbook", response_model=dict)
+async def get_item_orderbook(item_id: int, db: AsyncSession = Depends(get_db)):
+    """
+    Fetch order book (Top listings) for the item.
+    Returns cached DB snapshot if available, otherwise fetches live data.
+    """
+    from app.services.torn_api import torn_api_service
+    import json
+    
+    # Try to find item in DB
+    result = await db.execute(select(Item).where(Item.torn_id == item_id))
+    item = result.scalars().first()
+    
+    # If DB has snapshot, return it immediately
+    if item and item.orderbook_snapshot:
+        try:
+            snapshot = json.loads(item.orderbook_snapshot)
+            return {
+                "market_price": item.last_market_price or 0,
+                "bazaar_price": item.last_bazaar_price or 0,
+                "market_price_avg": item.last_market_price_avg or 0,
+                "bazaar_price_avg": item.last_bazaar_price_avg or 0,
+                "listings": snapshot,
+                "status": {
+                    "market": True,
+                    "bazaar": True
+                },
+                "cached": True  # Indicate this is from DB cache
+            }
+        except json.JSONDecodeError:
+            pass  # Fall through to live fetch
+    
+    # Otherwise fetch live
+    data = await torn_api_service.get_items([item_id], include_listings=True)
+    if not data or item_id not in data:
+        raise HTTPException(status_code=503, detail="Could not fetch order book")
+        
+    return data[item_id]

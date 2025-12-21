@@ -19,6 +19,8 @@ class ItemOut(ItemBase):
     id: int
     last_market_price: Optional[int]
     last_bazaar_price: Optional[int]
+    last_market_price_avg: Optional[int]
+    last_bazaar_price_avg: Optional[int]
     last_updated_at: Optional[datetime]
 
     class Config:
@@ -29,6 +31,8 @@ class PriceLogOut(BaseModel):
     timestamp: datetime
     market_price: Optional[int]
     bazaar_price: Optional[int]
+    market_price_avg: Optional[int]
+    bazaar_price_avg: Optional[int]
 
     class Config:
         from_attributes = True
