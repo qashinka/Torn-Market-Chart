@@ -41,11 +41,15 @@ Torn City マーケットトラッカー & 可視化ツール。TradingView ス�
    DB_PORT=3306
    ADMIN_PASSWORD=your_admin_password
    TORN_API_KEY=optional_fallback_key
+   # 内部DBを使用する場合は下記を設定。外部DBを使用する場合は空にするかコメントアウト。
+   COMPOSE_PROFILES=internal-db
    ```
 
    **外部データベースを使用する場合:**
    Dockerコンテナのデータベースではなく、独自のデータベースサーバーを使用するには：
    1. `DB_HOST` にデータベースサーバーのIPアドレスを設定します（例: `192.168.1.100` や `host.docker.internal`）。
+   2. `COMPOSE_PROFILES` を空にするか、行を削除します。これにより内部のMySQLコンテナが起動しなくなります。
+
    2. `DB_PORT` にデータベースのポートを設定します（デフォルト: 3306）。
    3. `DB_USER` と `DB_PASSWORD` が外部データベースの認証情報と一致していることを確認してください。
 
