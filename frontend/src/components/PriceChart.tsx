@@ -1,4 +1,4 @@
-import React from 'react';
+
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card"
 
@@ -24,11 +24,23 @@ export function PriceChart({ data, title }: PriceChartProps) {
                     <LineChart data={data}>
                         <XAxis
                             dataKey="timestamp"
-                            tickFormatter={(str) => new Date(str).toLocaleTimeString()}
+                            tickFormatter={(str) => {
+                                const date = new Date(str);
+                                return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                            }}
                         />
                         <YAxis />
                         <Tooltip
-                            labelFormatter={(label) => new Date(label).toLocaleString()}
+                            labelFormatter={(label) => {
+                                const date = new Date(label);
+                                return date.toLocaleString([], {
+                                    year: 'numeric',
+                                    month: 'numeric',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit'
+                                });
+                            }}
                         />
                         <Line type="monotone" dataKey="market_price" stroke="#8884d8" name="Market" />
                         <Line type="monotone" dataKey="bazaar_price" stroke="#82ca9d" name="Bazaar" />

@@ -2,6 +2,7 @@ import asyncio
 import logging
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.cron import CronTrigger
 from app.services.price_service import price_service
 
 # Configure logging
@@ -18,10 +19,10 @@ async def main():
 
     # Add jobs
 
-    # 1. Fetch Prices every 1 minute
+    # 1. Fetch Prices every minute at 00 seconds
     scheduler.add_job(
         price_service.update_all_prices,
-        IntervalTrigger(minutes=1),
+        CronTrigger(second=0),
         id="update_prices",
         replace_existing=True
     )
@@ -31,6 +32,15 @@ async def main():
         price_service.downsample_data,
         IntervalTrigger(days=1, start_date='2023-01-01 02:00:00'),
         id="downsample_data",
+        replace_existing=True
+    )
+
+    # 4. Sync Item Catalog every day at 3 AM
+    from app.services.item_service import item_service
+    scheduler.add_job(
+        item_service.sync_item_catalog,
+        IntervalTrigger(days=1, start_date='2023-01-01 03:00:00'),
+        id="sync_catalog",
         replace_existing=True
     )
 

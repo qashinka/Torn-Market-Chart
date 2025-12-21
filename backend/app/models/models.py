@@ -13,7 +13,7 @@ class Item(Base):
     type = Column(String(50), nullable=True)
 
     # Tracking status
-    is_tracked = Column(Boolean, default=True)
+    is_tracked = Column(Boolean, default=False)
 
     # Last known prices (cached for quick access)
     last_market_price = Column(BigInteger, nullable=True)

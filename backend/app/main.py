@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.endpoints import items, prices, auth
+from app.api.endpoints import items, prices, auth, settings
 
 app = FastAPI(title="Torn Market Tracker API")
 
@@ -21,6 +21,7 @@ app.add_middleware(
 app.include_router(items.router, prefix="/api/v1/items", tags=["items"])
 app.include_router(prices.router, prefix="/api/v1/prices", tags=["prices"])
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
+app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"])
 
 @app.get("/")
 async def root():

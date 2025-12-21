@@ -1,0 +1,21 @@
+
+> torn-market-tracker-frontend@0.0.0 build
+> tsc && vite build
+
+[36mvite v4.5.14 [32mbuilding for production...[36m[39m
+transforming...
+node:internal/process/promises:332
+    triggerUncaughtException(err, true /* fromPromise */);
+    ^
+
+[Failed to load PostCSS config: Failed to load PostCSS config (searchPath: C:/Users/akagifreeez/Desktop/Torn-Market-Chart/frontend): [ReferenceError] module is not defined in ES module scope
+This file is being treated as an ES module because it has a '.js' file extension and 'C:\Users\akagifreeez\Desktop\Torn-Market-Chart\frontend\package.json' contains "type": "module". To treat it as a CommonJS script, rename it to use the '.cjs' file extension.
+ReferenceError: module is not defined in ES module scope
+This file is being treated as an ES module because it has a '.js' file extension and 'C:\Users\akagifreeez\Desktop\Torn-Market-Chart\frontend\package.json' contains "type": "module". To treat it as a CommonJS script, rename it to use the '.cjs' file extension.
+    at file:///C:/Users/akagifreeez/Desktop/Torn-Market-Chart/frontend/postcss.config.js:1:1
+    at ModuleJob.run (node:internal/modules/esm/module_job:413:25)
+    at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:654:26)
+    at async importDefault (file:///C:/Users/akagifreeez/Desktop/Torn-Market-Chart/frontend/node_modules/vite/dist/node/chunks/dep-827b23df.js:36557:18)
+    at async Object.search (file:///C:/Users/akagifreeez/Desktop/Torn-Market-Chart/frontend/node_modules/vite/dist/node/chunks/dep-827b23df.js:28993:38)]
+
+Node.js v25.2.0

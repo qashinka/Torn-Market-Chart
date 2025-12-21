@@ -32,3 +32,18 @@ class PriceLogOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+class ApiKeyBase(BaseModel):
+    key: str
+    comment: Optional[str] = None
+
+class ApiKeyCreate(ApiKeyBase):
+    pass
+
+class ApiKeyOut(ApiKeyBase):
+    id: int
+    is_active: bool
+    last_used_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
