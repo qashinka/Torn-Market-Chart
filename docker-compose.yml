@@ -20,6 +20,8 @@ services:
     ports:
       # API Port is now exposed via Tailscale container because API piggybacks on it
       - "8000:8000"
+      # Web Port exposed via Tailscale container
+      - "3000:80"
 
   # Internal DB (Optional / Disabled via Profile)
   db:
@@ -55,7 +57,7 @@ services:
   api:
     build: ./backend
     container_name: torn_api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips '*'
     volumes:
       - ./backend:/app
     environment:
@@ -99,17 +101,11 @@ services:
   web:
     build: ./frontend
     container_name: torn_web
-    ports:
-      - "3000:80"
-    environment:
-      # Web needs to talk to API. API is "in" torn_tailscale container.
-      # But 'web' is on default network. 'torn_tailscale' is on default network? Yes by default.
-      # So 'api' hostname inside 'tailscale' stack is localhost.
-      # But 'web' container talking to 'torn_tailscale' container at port 8000 for server-side fetches? No code fetches?
-      # Typically web container just serves files. Browser talks to localhost:8000.
-      # If web container does SSR or proxy, it needs URL.
-      # Assuming CSR (Client Side Rendering): Browser -> localhost:8000 (Mapped to Tailscale:8000 -> API:8000). Correct.
-      - REACT_APP_API_URL=http://localhost:8000
+    volumes:
+      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+    # network_mode: service:tailscale
+    # Use Tailscale network to be accessible via VPN IP and access API via localhost
+    network_mode: service:tailscale
     depends_on:
       - api
     restart: unless-stopped

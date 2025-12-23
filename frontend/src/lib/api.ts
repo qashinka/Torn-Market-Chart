@@ -5,7 +5,7 @@ import axios from 'axios';
 // However, docker-compose exposes api on 8000, web on 3000.
 // We should use relative path /api and proxy in vite or nginx.
 export const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
+    baseURL: import.meta.env.VITE_API_URL || '/api/v1',
     headers: {
         'Content-Type': 'application/json',
     },
@@ -28,27 +28,27 @@ export interface ApiKey {
 }
 
 export const getApiKeys = async () => {
-    const response = await api.get<ApiKey[]>('/settings/apikeys/');
+    const response = await api.get<ApiKey[]>('/settings/apikeys');
     return response.data;
 };
 
 export const createApiKey = async (key: string, comment?: string) => {
-    const response = await api.post<ApiKey>('/settings/apikeys/', { key, comment });
+    const response = await api.post<ApiKey>('/settings/apikeys', { key, comment });
     return response.data;
 };
 
 export const deleteApiKey = async (id: number) => {
-    await api.delete(`/settings/apikeys/${id}/`);
+    await api.delete(`/settings/apikeys/${id}`);
 };
 
 // System Config
 export const getSystemConfig = async () => {
-    const response = await api.get<Record<string, string>>('/settings/config/');
+    const response = await api.get<Record<string, string>>('/settings/config');
     return response.data;
 };
 
 export const updateSystemConfig = async (config: Record<string, string>) => {
-    await api.post('/settings/config/', config);
+    await api.post('/settings/config', config);
 };
 
 export interface Item {
@@ -66,17 +66,17 @@ export interface Item {
 }
 
 export const getItems = async () => {
-    const response = await api.get<Item[]>('/items/');
+    const response = await api.get<Item[]>('/items');
     return response.data;
 };
 
 export const createItem = async (torn_id: number, name: string) => {
-    const response = await api.post<Item>('/items/', { torn_id, name });
+    const response = await api.post<Item>('/items', { torn_id, name });
     return response.data;
 };
 
 export const deleteItem = async (id: number) => {
-    await api.delete(`/items/${id}/`);
+    await api.delete(`/items/${id}`);
 };
 
 export interface TornItem {
@@ -87,7 +87,7 @@ export interface TornItem {
 }
 
 export const getTornItems = async () => {
-    const response = await api.get<Item[]>('/items/torn/');
+    const response = await api.get<Item[]>('/items/torn');
     return response.data;
 };
 
@@ -100,7 +100,7 @@ export interface PricePoint {
 }
 
 export const getHistory = async (itemId: number) => {
-    const response = await api.get<PricePoint[]>(`/items/${itemId}/history/`);
+    const response = await api.get<PricePoint[]>(`/items/${itemId}/history`);
     // Backend returns newest first (DESC), but charts usually expect oldest first (Left->Right)
     // or we just want standard time flow Left(Old) -> Right(New).
     return response.data.reverse();
@@ -130,6 +130,6 @@ export interface OrderBookResponse {
 }
 
 export const getOrderBook = async (itemId: number) => {
-    const response = await api.get<OrderBookResponse>(`/items/${itemId}/orderbook/`);
+    const response = await api.get<OrderBookResponse>(`/items/${itemId}/orderbook`);
     return response.data;
 };

@@ -62,6 +62,17 @@ export function PriceChart({ data }: PriceChartProps) {
                 secondsVisible: false,
                 borderColor: '#27272a',
             },
+            localization: {
+                // Force JST display on the time axis
+                timeFormatter: (timestamp: number) => {
+                    return new Date(timestamp * 1000).toLocaleString('ja-JP', {
+                        timeZone: 'Asia/Tokyo',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                    });
+                },
+                dateFormat: 'yyyy/MM/dd',
+            },
             rightPriceScale: {
                 borderColor: '#27272a',
                 scaleMargins: {
@@ -196,7 +207,8 @@ export function PriceChart({ data }: PriceChartProps) {
             // Format time
             // param.time is the time scale value (seconds in our case)
             const date = new Date((param.time as number) * 1000);
-            const dateStr = date.toLocaleString([], {
+            const dateStr = date.toLocaleString('ja-JP', {
+                timeZone: 'Asia/Tokyo',
                 month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit'
             });
 
