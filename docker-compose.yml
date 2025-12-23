@@ -1,6 +1,27 @@
 version: '3.8'
 
 services:
+  # Tailscale Sidecar Service
+  tailscale:
+    image: tailscale/tailscale:latest
+    container_name: torn_tailscale
+    hostname: torn-market-chart # Name in Tailscale Admin Console
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false # Try kernel networking if possible, else true
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun # Required for VPN
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    ports:
+      # API Port is now exposed via Tailscale container because API piggybacks on it
+      - "8000:8000"
+
+  # Internal DB (Optional / Disabled via Profile)
   db:
     image: mysql:8.0
     container_name: torn_db
@@ -39,15 +60,19 @@ services:
       - ./backend:/app
     environment:
       - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
+      # Redis is on the 'default' bridge network, but API is in Tailscale network namespace.
+      # To reach Redis, API likely needs to hit the container IP or gateway if not shared.
+      # Actually, network_mode: service:tailscale isolates API from default bridge unless Tailscale is also on it.
+      # Best practice: Tailscale container joins default bridge too.
+      - REDIS_URL=redis://redis:6379/0 # Can API resolve 'redis'? 
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - TORN_API_KEY=${TORN_API_KEY}
-    ports:
-      - "8000:8000"
+    # network_mode: service:tailscale
+    # NOTE: When using network_mode, 'ports' are ignored here. Defined in tailscale service.
+    network_mode: service:tailscale
     depends_on:
-      # db dependency removed for external db support. handled by app retry logic.
-      # db:
-      #   condition: service_healthy
+      tailscale:
+        condition: service_started
       redis:
         condition: service_started
     restart: unless-stopped
@@ -63,9 +88,10 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - TORN_API_KEY=${TORN_API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    network_mode: service:tailscale
     depends_on:
-      # db:
-      #   condition: service_healthy
+      tailscale:
+        condition: service_started
       redis:
         condition: service_started
     restart: unless-stopped
@@ -75,6 +101,15 @@ services:
     container_name: torn_web
     ports:
       - "3000:80"
+    environment:
+      # Web needs to talk to API. API is "in" torn_tailscale container.
+      # But 'web' is on default network. 'torn_tailscale' is on default network? Yes by default.
+      # So 'api' hostname inside 'tailscale' stack is localhost.
+      # But 'web' container talking to 'torn_tailscale' container at port 8000 for server-side fetches? No code fetches?
+      # Typically web container just serves files. Browser talks to localhost:8000.
+      # If web container does SSR or proxy, it needs URL.
+      # Assuming CSR (Client Side Rendering): Browser -> localhost:8000 (Mapped to Tailscale:8000 -> API:8000). Correct.
+      - REACT_APP_API_URL=http://localhost:8000
     depends_on:
       - api
     restart: unless-stopped
@@ -89,12 +124,14 @@ services:
       PMA_PASSWORD: ${DB_PASSWORD}
     ports:
       - "8081:80"
-    depends_on:
-      - db
     restart: unless-stopped
+    # If PMA needs to see DB, it must also be naturally networked. 
+    # Or piggyback. For now, we leave it isolated/broken for external DB unless piggybacked.
+    # Profiles can hide it.
     profiles:
       - internal-db
 
 volumes:
   db_data:
   redis_data:
+  tailscale_data:
