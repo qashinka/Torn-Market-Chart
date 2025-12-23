@@ -37,24 +37,25 @@ Torn City マーケットトラッカー & 可視化ツール。TradingView ス�
    DB_NAME=torn_market
    DB_USER=torn_market
    DB_PASSWORD=your_db_password
-   DB_HOST=db # または外部DBのIPアドレス
+   # 外部データベースの Tailscale 上の IPアドレス
+   DB_HOST=100.90.10.0 
    DB_PORT=3306
+
+   # 必須: Tailscale Auth Key (Reusable 推奨)
+   TS_AUTHKEY=tskey-auth-xxxxx
+   
    ADMIN_PASSWORD=your_admin_password
    TORN_API_KEY=optional_fallback_key
-   # 内部DBを使用する場合は下記を設定。外部DBを使用する場合は空にするかコメントアウト。
-   COMPOSE_PROFILES=internal-db
+   
+   # 内部DBを無効化するためにコメントアウトします
+   # COMPOSE_PROFILES=internal-db
    ```
 
-   **外部データベースを使用する場合:**
-   Dockerコンテナのデータベースではなく、独自のデータベースサーバーを使用するには：
-   1. `DB_HOST` にデータベースサーバーのIPアドレスを設定します（例: `192.168.1.100` や `host.docker.internal`）。
-   2. `COMPOSE_PROFILES` を空にするか、行を削除します。これにより内部のMySQLコンテナが起動しなくなります。
 
-   2. `DB_PORT` にデータベースのポートを設定します（デフォルト: 3306）。
-   3. `DB_USER` と `DB_PASSWORD` が外部データベースの認証情報と一致していることを確認してください。
 
 2. アプリケーションを起動します:
    ```bash
+   # API, Worker, Web, Redis, そして Tailscale サイドカーを一括で起動します
    docker-compose up -d --build
    ```
 

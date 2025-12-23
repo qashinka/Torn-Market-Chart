@@ -37,25 +37,23 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
    DB_NAME=torn_market
    DB_USER=torn_market
    DB_PASSWORD=your_db_password
-   DB_HOST=db # Or your external DB IP
+   # Tailscale IP of your external database
+   DB_HOST=100.90.10.0 
    DB_PORT=3306
+   
+   # Required: Your Tailscale Auth Key (Reusable)
+   TS_AUTHKEY=tskey-auth-xxxxx
+   
    ADMIN_PASSWORD=your_admin_password
    TORN_API_KEY=optional_fallback_key
-   # Set to 'internal-db' to run the included MySQL container.
-   # Leave empty or comment out to use an external database only.
-   COMPOSE_PROFILES=internal-db
+   
+   # Comment out to disable internal DB
+   # COMPOSE_PROFILES=internal-db
    ```
-
-   **Using an External Database:**
-   To use your own database server instead of the Docker container:
-   1. Set `DB_HOST` to your database server's IP address (e.g., `192.168.1.100` or `host.docker.internal`).
-   2. Clear or comment out the `COMPOSE_PROFILES` variable. This prevents the internal MySQL container from starting.
-   2. Set `DB_PORT` to your database port (default: 3306).
-   3. Ensure `DB_USER` and `DB_PASSWORD` match your external database credentials.
-
 
 2. Start the application:
    ```bash
+   # Starts API, Worker, Web, Redis, and Tailscale sidecar
    docker-compose up -d --build
    ```
 
