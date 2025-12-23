@@ -53,7 +53,7 @@ export function ManageItems() {
     }
 
     return (
-        <div className="p-8 space-y-8 max-w-4xl mx-auto">
+        <div className="p-4 md:p-8 space-y-8 max-w-4xl mx-auto">
             <h2 className="text-3xl font-bold mb-6">Manage Items</h2>
 
             {/* Item Creation Form */}
