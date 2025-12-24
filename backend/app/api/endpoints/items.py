@@ -73,7 +73,7 @@ async def get_item_history(item_id: int, db: AsyncSession = Depends(get_db)):
         select(PriceLog)
         .where(PriceLog.item_id == item_id)
         .order_by(PriceLog.timestamp.desc())
-        .limit(100)
+        .limit(4320)
     )
     logs = result.scalars().all()
     # Convert to simple dict list for frontend
