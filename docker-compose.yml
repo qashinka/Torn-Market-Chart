@@ -1,28 +1,6 @@
 version: '3.8'
 
 services:
-  # Tailscale Sidecar Service
-  tailscale:
-    image: tailscale/tailscale:latest
-    container_name: torn_tailscale
-    hostname: torn-market-chart # Name in Tailscale Admin Console
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false # Try kernel networking if possible, else true
-    volumes:
-      - tailscale_data:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun # Required for VPN
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    restart: unless-stopped
-    ports:
-      # API Port is now exposed via Tailscale container because API piggybacks on it
-      - "8000:8000"
-      # Web Port exposed via Tailscale container
-      - "3000:80"
-
   # Internal DB (Optional / Disabled via Profile)
   db:
     image: mysql:8.0
@@ -71,10 +49,8 @@ services:
       - TORN_API_KEY=${TORN_API_KEY}
     # network_mode: service:tailscale
     # NOTE: When using network_mode, 'ports' are ignored here. Defined in tailscale service.
-    network_mode: service:tailscale
+    # network_mode: service:tailscale
     depends_on:
-      tailscale:
-        condition: service_started
       redis:
         condition: service_started
     restart: unless-stopped
@@ -90,10 +66,8 @@ services:
       - REDIS_URL=redis://redis:6379/0
       - TORN_API_KEY=${TORN_API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    network_mode: service:tailscale
+    # network_mode: service:tailscale
     depends_on:
-      tailscale:
-        condition: service_started
       redis:
         condition: service_started
     restart: unless-stopped
@@ -103,9 +77,10 @@ services:
     container_name: torn_web
     volumes:
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
-    # network_mode: service:tailscale
-    # Use Tailscale network to be accessible via VPN IP and access API via localhost
-    network_mode: service:tailscale
+    ports:
+      - "3000:80"
+    links:
+      - api
     depends_on:
       - api
     restart: unless-stopped
@@ -130,4 +105,3 @@ services:
 volumes:
   db_data:
   redis_data:
-  tailscale_data:

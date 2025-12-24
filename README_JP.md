@@ -53,11 +53,20 @@ Torn City マーケットトラッカー & 可視化ツール。TradingView ス�
 
 
 
+
 2. アプリケーションを起動します:
-   ```bash
-   # API, Worker, Web, Redis, そして Tailscale サイドカーを一括で起動します
-   docker-compose up -d --build
-   ```
+
+    ### モード A: 内部データベース（デフォルト）
+    ローカルテストや自己完結型のデプロイに最適です。
+    ```bash
+    docker-compose up -d --build
+    ```
+
+    ### モード B: Tailscale + 外部データベース
+    Web UIへのVPNアクセスを有効にし、Tailscale経由で外部データベースに接続します。
+    ```bash
+    docker-compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+    ```
 
 3. ダッシュボードにアクセスします: `http://localhost:3000`
 

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { ArrowLeft } from 'lucide-react';
 
@@ -46,13 +46,17 @@ export function Dashboard() {
     // Actually, for better UX on mobile, we might NOT want to auto-select.
     // But changing that logic might affect desktop. 
     // Let's stick to the conditional CSS approach first.
-    if (items && items.length > 0 && !selectedItemId && !temporaryItem) {
-        // Checking window.innerWidth in render is bad, but for effect initialization it is okay.
-        // But here we are in render body.
-        // Let's just default to selecting the first item.
-        // Users can hit back if they are on mobile.
-        setSelectedItemId(items[0].id);
-    }
+    const hasAutoSelected = useRef(false);
+
+    useEffect(() => {
+        if (items && items.length > 0 && !selectedItemId && !temporaryItem && !hasAutoSelected.current) {
+            // Only auto-select on desktop (md breakpoint is usually 768px)
+            if (window.innerWidth >= 768) {
+                setSelectedItemId(items[0].id);
+                hasAutoSelected.current = true;
+            }
+        }
+    }, [items, selectedItemId, temporaryItem]);
 
     const handleTemporarySelect = (item: Item) => {
         setTemporaryItem(item);
@@ -119,9 +123,11 @@ export function Dashboard() {
                             <div className="flex items-center gap-2 w-full md:w-auto">
                                 <button
                                     onClick={handleBack}
-                                    className="md:hidden p-2 -ml-2 text-gray-400 hover:text-white"
+                                    type="button"
+                                    className="md:hidden p-3 -ml-3 text-gray-400 hover:text-white relative z-10 hover:bg-zinc-800/50 rounded-full transition-colors"
+                                    aria-label="Back to items"
                                 >
-                                    <ArrowLeft className="w-6 h-6" />
+                                    <ArrowLeft className="w-6 h-6 pointer-events-none" />
                                 </button>
                                 <div>
                                     <h1 className="text-lg md:text-2xl font-bold text-white mb-1 flex items-center gap-2">

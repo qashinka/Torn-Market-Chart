@@ -51,11 +51,20 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
    # COMPOSE_PROFILES=internal-db
    ```
 
+
 2. Start the application:
-   ```bash
-   # Starts API, Worker, Web, Redis, and Tailscale sidecar
-   docker-compose up -d --build
-   ```
+
+    ### Mode A: Internal Database (Default)
+    Best for local testing and self-contained deployment.
+    ```bash
+    docker-compose up -d --build
+    ```
+
+    ### Mode B: Tailscale + External Database
+    Enables VPN access to the Web UI and connects to an external database via Tailscale.
+    ```bash
+    docker-compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+    ```
 
 3. Access the dashboard at `http://localhost:3000`
 
