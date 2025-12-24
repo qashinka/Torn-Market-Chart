@@ -36,11 +36,13 @@ services:
 
   web:
     network_mode: service:tailscale
+    links: [] # ネットワークモードとの競合を避けるため、ベースファイルのlinksを無効化
+    ports: [] # ネットワークモードとの競合を避けるため、ベースファイルのportsを無効化
     depends_on:
       tailscale:
         condition: service_started
-    # Ports in base file are ignored when network_mode is used, 
-    # but good practice to know they are handled by tailscale service above.
+    # ネットワークモード使用時はベースファイルのportsは無視されますが、
+    # tailscaleサービスによって処理されることを明示するのは良い習慣です。
 
 volumes:
   tailscale_data:
