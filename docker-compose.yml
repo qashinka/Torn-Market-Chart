@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  # Internal DB (Optional / Disabled via Profile)
+  # Internal DB (Enabled with 'internal' profile)
   db:
     image: mysql:8.0
     container_name: torn_db
@@ -21,7 +21,36 @@ services:
       retries: 10
     restart: unless-stopped
     profiles:
-      - internal-db
+      - internal
+    networks:
+      default:
+        aliases:
+          - mysql_host
+
+  # External DB Proxy (Enabled with 'external' profile)
+  db-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.proxy
+    container_name: torn_db_proxy
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - REMOTE_DB_HOST=${REMOTE_DB_HOST}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale_data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    restart: unless-stopped
+    profiles:
+      - external
+    networks:
+      default:
+        aliases:
+          - mysql_host
 
   redis:
     image: redis:alpine
@@ -39,17 +68,12 @@ services:
     volumes:
       - ./backend:/app
     environment:
-      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
-      # Redis is on the 'default' bridge network, but API is in Tailscale network namespace.
-      # To reach Redis, API likely needs to hit the container IP or gateway if not shared.
-      # Actually, network_mode: service:tailscale isolates API from default bridge unless Tailscale is also on it.
-      # Best practice: Tailscale container joins default bridge too.
-      - REDIS_URL=redis://redis:6379/0 # Can API resolve 'redis'? 
+      # DB_HOST is fixed to 'mysql_host', which resolves to either 'db' or 'db-proxy'
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - TORN_API_KEY=${TORN_API_KEY}
-    # network_mode: service:tailscale
-    # NOTE: When using network_mode, 'ports' are ignored here. Defined in tailscale service.
-    # network_mode: service:tailscale
+    # Removed depends_on for DB to support profiles
     depends_on:
       redis:
         condition: service_started
@@ -62,11 +86,11 @@ services:
     volumes:
       - ./backend:/app
     environment:
-      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:${DB_PORT}/${DB_NAME}
+      # DB_HOST is fixed to 'mysql_host'
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
       - REDIS_URL=redis://redis:6379/0
       - TORN_API_KEY=${TORN_API_KEY}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    # network_mode: service:tailscale
     depends_on:
       redis:
         condition: service_started
@@ -77,9 +101,8 @@ services:
     container_name: torn_web
     volumes:
       - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
-    # ports:
-    #   - "3000:80"
-
+    ports:
+      - "3000:80"
     depends_on:
       - api
     restart: unless-stopped
@@ -88,19 +111,17 @@ services:
     image: phpmyadmin/phpmyadmin
     container_name: torn_pma
     environment:
-      PMA_HOST: ${DB_HOST}
+      PMA_HOST: mysql_host
       PMA_PORT: ${DB_PORT}
       PMA_USER: ${DB_USER}
       PMA_PASSWORD: ${DB_PASSWORD}
     ports:
       - "8081:80"
     restart: unless-stopped
-    # If PMA needs to see DB, it must also be naturally networked. 
-    # Or piggyback. For now, we leave it isolated/broken for external DB unless piggybacked.
-    # Profiles can hide it.
-    profiles:
-      - internal-db
+    # Can run with either profile as long as a DB is present.
+    # If no DB profile is active, this will just fail to connect.
 
 volumes:
   db_data:
   redis_data:
+  tailscale_data:

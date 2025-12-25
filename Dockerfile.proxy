@@ -1,0 +1,15 @@
+FROM tailscale/tailscale:latest
+
+# Install socat
+RUN apk add --no-cache socat
+
+# Copy startup script
+COPY start-proxy.sh /start-proxy.sh
+RUN chmod +x /start-proxy.sh
+
+# Environment variables should be provided at runtime
+ENV REMOTE_DB_HOST=""
+ENV TS_AUTHKEY=""
+
+# Entrypoint
+ENTRYPOINT ["/start-proxy.sh"]
