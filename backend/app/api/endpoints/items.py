@@ -10,7 +10,7 @@ from app.api.deps import verify_admin
 
 router = APIRouter()
 
-@router.get("/", response_model=List[ItemOut])
+@router.get("", response_model=List[ItemOut])
 async def read_items(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
     # Only return tracked items for the main list
     result = await db.execute(select(Item).where(Item.is_tracked == True).offset(skip).limit(limit))
@@ -22,7 +22,7 @@ async def get_torn_items():
     items = await item_service.get_items_catalog()
     return items
 
-@router.post("/", response_model=ItemOut, dependencies=[Depends(verify_admin)])
+@router.post("", response_model=ItemOut, dependencies=[Depends(verify_admin)])
 async def create_item(item_in: ItemCreate, db: AsyncSession = Depends(get_db)):
     from app.models.models import Item
     
@@ -73,7 +73,7 @@ async def get_item_history(item_id: int, db: AsyncSession = Depends(get_db)):
         select(PriceLog)
         .where(PriceLog.item_id == item_id)
         .order_by(PriceLog.timestamp.desc())
-        .limit(100)
+        .limit(4320)
     )
     logs = result.scalars().all()
     # Convert to simple dict list for frontend

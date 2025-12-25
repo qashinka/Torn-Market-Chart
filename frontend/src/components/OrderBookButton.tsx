@@ -44,63 +44,80 @@ export function OrderBookButton({ itemId, itemName }: OrderBookButtonProps) {
             </button>
 
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-[600px] bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
-                    {isLoading ? (
-                        <div className="p-4 text-center text-zinc-500">
-                            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto"></div>
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-2 divide-x divide-zinc-700">
-                            {/* Market Column */}
-                            <div className="p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="text-xs font-bold text-green-500 uppercase tracking-wide">Item Market</h3>
-                                    <a
-                                        href={`https://www.torn.com/imarket.php#/p=shop&step=shop&type=&searchname=${encodeURIComponent(itemName)}`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[10px] text-zinc-400 hover:text-white transition-colors"
-                                    >
-                                        Open Market →
-                                    </a>
-                                </div>
-                                <div className="space-y-1">
-                                    {marketListings.length > 0 ? (
-                                        marketListings.map((listing, idx) => (
-                                            <ListingRow key={idx} listing={listing} rank={idx + 1} itemName={itemName} />
-                                        ))
-                                    ) : (
-                                        <div className="text-xs text-zinc-500 py-2">No listings available</div>
-                                    )}
-                                </div>
-                            </div>
+                <>
+                    {/* Mobile Modal Backdrop / Desktop Invisible Wrapper (handled by inner absolute) */}
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm md:absolute md:inset-auto md:bg-transparent md:backdrop-blur-none md:p-0 md:block md:w-[600px] md:top-full md:left-0 md:mt-1">
 
-                            {/* Bazaar Column */}
-                            <div className="p-3">
-                                <div className="flex items-center justify-between mb-2">
-                                    <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wide">Bazaar</h3>
-                                    <a
-                                        href={`https://www.torn.com/bazaar.php`}
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="text-[10px] text-zinc-400 hover:text-white transition-colors"
-                                    >
-                                        Open Bazaar →
-                                    </a>
+                        {/* Content Container */}
+                        <div className="bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl w-full max-w-sm md:max-w-none md:w-full overflow-hidden flex flex-col max-h-[80vh] md:max-h-none">
+                            {isLoading ? (
+                                <div className="p-4 text-center text-zinc-500">
+                                    <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-white mx-auto"></div>
                                 </div>
-                                <div className="space-y-1">
-                                    {bazaarListings.length > 0 ? (
-                                        bazaarListings.map((listing, idx) => (
-                                            <ListingRow key={idx} listing={listing} rank={idx + 1} itemName={itemName} />
-                                        ))
-                                    ) : (
-                                        <div className="text-xs text-zinc-500 py-2">No listings available</div>
-                                    )}
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-zinc-700 overflow-y-auto md:overflow-visible">
+                                    {/* Market Column */}
+                                    <div className="p-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="text-xs font-bold text-green-500 uppercase tracking-wide">Item Market</h3>
+                                            <a
+                                                href={`https://www.torn.com/imarket.php#/p=shop&step=shop&type=&searchname=${encodeURIComponent(itemName)}`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[10px] text-zinc-400 hover:text-white transition-colors"
+                                            >
+                                                Open Market →
+                                            </a>
+                                        </div>
+                                        <div className="space-y-1">
+                                            {marketListings.length > 0 ? (
+                                                marketListings.map((listing, idx) => (
+                                                    <ListingRow key={idx} listing={listing} rank={idx + 1} itemName={itemName} />
+                                                ))
+                                            ) : (
+                                                <div className="text-xs text-zinc-500 py-2">No listings available</div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Bazaar Column */}
+                                    <div className="p-3">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h3 className="text-xs font-bold text-blue-500 uppercase tracking-wide">Bazaar</h3>
+                                            <a
+                                                href={`https://www.torn.com/bazaar.php`}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="text-[10px] text-zinc-400 hover:text-white transition-colors"
+                                            >
+                                                Open Bazaar →
+                                            </a>
+                                        </div>
+                                        <div className="space-y-1">
+                                            {bazaarListings.length > 0 ? (
+                                                bazaarListings.map((listing, idx) => (
+                                                    <ListingRow key={idx} listing={listing} rank={idx + 1} itemName={itemName} />
+                                                ))
+                                            ) : (
+                                                <div className="text-xs text-zinc-500 py-2">No listings available</div>
+                                            )}
+                                        </div>
+                                    </div>
                                 </div>
+                            )}
+
+                            {/* Close button for mobile only */}
+                            <div className="p-3 border-t border-zinc-800 md:hidden">
+                                <button
+                                    onClick={() => setIsOpen(false)}
+                                    className="w-full py-2 bg-zinc-800 rounded text-sm font-medium hover:bg-zinc-700 transition-colors"
+                                >
+                                    Close
+                                </button>
                             </div>
                         </div>
-                    )}
-                </div>
+                    </div>
+                </>
             )}
 
             {/* Backdrop to close on outside click */}

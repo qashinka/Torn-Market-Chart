@@ -226,9 +226,9 @@ class TornApiService:
                                          bazaar_listings.append({
                                              "price": l.get('price'),
                                              "quantity": l.get('amount') or l.get('quantity'), # Check field name
-                                             "id": l.get('seller_id') or l.get('userId'), # bazaar owner ID
-                                             "type": "bazaar"
-                                         })
+                                            "id": l.get('seller_id') or l.get('sellerId') or l.get('user_id') or l.get('userId') or l.get('player_id') or l.get('playerId'), # Try all common variations
+                                            "type": "bazaar"
+                                        })
                     else:
                         logger.warning(f"weav3r.dev returned {response.status_code} for item {item_id}")
                 except Exception as e:

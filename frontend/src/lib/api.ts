@@ -5,7 +5,7 @@ import axios from 'axios';
 // However, docker-compose exposes api on 8000, web on 3000.
 // We should use relative path /api and proxy in vite or nginx.
 export const api = axios.create({
-    baseURL: import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1',
+    baseURL: import.meta.env.VITE_API_URL || '/api/v1',
     headers: {
         'Content-Type': 'application/json',
     },
