@@ -38,17 +38,18 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
    DB_USER=torn_market
    DB_PASSWORD=your_db_password
    # Tailscale IP of your external database
-   DB_HOST=100.90.10.0 
+   # Tailscale IP of your external database (Required for Mode B)
+   REMOTE_DB_HOST=100.90.10.0
    DB_PORT=3306
-   
-   # Required: Your Tailscale Auth Key (Reusable)
+
+   # Required: Your Tailscale Auth Key (Reusable) - Needed for Mode B
    TS_AUTHKEY=tskey-auth-xxxxx
    
    ADMIN_PASSWORD=your_admin_password
    TORN_API_KEY=optional_fallback_key
    
-   # Comment out to disable internal DB
-   # COMPOSE_PROFILES=internal-db
+   # Optional: Set default profile (internal or external)
+   # COMPOSE_PROFILES=internal
    ```
 
 
@@ -57,13 +58,14 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
     ### Mode A: Internal Database (Default)
     Best for local testing and self-contained deployment.
     ```bash
-    docker-compose up -d --build
+    docker-compose --profile internal up -d --build
     ```
 
     ### Mode B: Tailscale + External Database
-    Enables VPN access to the Web UI and connects to an external database via Tailscale.
+    Connects to an external database via a Tailscale Proxy container.
+    Ensure `REMOTE_DB_HOST` and `TS_AUTHKEY` are set in `.env`.
     ```bash
-    docker-compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+    docker-compose --profile external up -d --build
     ```
 
 3. Access the dashboard at `http://localhost:3000`

@@ -37,18 +37,18 @@ Torn City マーケットトラッカー & 可視化ツール。TradingView ス�
    DB_NAME=torn_market
    DB_USER=torn_market
    DB_PASSWORD=your_db_password
-   # 外部データベースの Tailscale 上の IPアドレス
-   DB_HOST=100.90.10.0 
+   # 外部データベースの Tailscale 上の IPアドレス（モードBで必須）
+   REMOTE_DB_HOST=100.90.10.0
    DB_PORT=3306
 
-   # 必須: Tailscale Auth Key (Reusable 推奨)
+   # 必須: Tailscale Auth Key (Reusable 推奨) - モードBで必須
    TS_AUTHKEY=tskey-auth-xxxxx
    
    ADMIN_PASSWORD=your_admin_password
    TORN_API_KEY=optional_fallback_key
    
-   # 内部DBを無効化するためにコメントアウトします
-   # COMPOSE_PROFILES=internal-db
+   # オプション: デフォルトのプロファイルを指定 (internal または external)
+   # COMPOSE_PROFILES=internal
    ```
 
 
@@ -59,13 +59,14 @@ Torn City マーケットトラッカー & 可視化ツール。TradingView ス�
     ### モード A: 内部データベース（デフォルト）
     ローカルテストや自己完結型のデプロイに最適です。
     ```bash
-    docker-compose up -d --build
+    docker-compose --profile internal up -d --build
     ```
 
     ### モード B: Tailscale + 外部データベース
-    Web UIへのVPNアクセスを有効にし、Tailscale経由で外部データベースに接続します。
+    Tailscale Proxyコンテナを経由して外部データベースに接続します。
+    `.env` で `REMOTE_DB_HOST` と `TS_AUTHKEY` が設定されていることを確認してください。
     ```bash
-    docker-compose -f docker-compose.yml -f docker-compose.tailscale.yml up -d --build
+    docker-compose --profile external up -d --build
     ```
 
 3. ダッシュボードにアクセスします: `http://localhost:3000`
