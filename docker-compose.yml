@@ -123,7 +123,39 @@ services:
     # Can run with either profile as long as a DB is present.
     # If no DB profile is active, this will just fail to connect.
 
+    # Tailscale Web Proxy (Enabled with 'external' profile)
+    # Exposes the web frontend via Tailscale network
+  tailscale-web:
+    image: tailscale/tailscale:latest
+    container_name: torn_ts_web
+    hostname: torn-market-web
+    environment:
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - TS_STATE_DIR=/var/lib/tailscale
+      - TS_USERSPACE=false
+    volumes:
+      - tailscale_web_data:/var/lib/tailscale
+      - /dev/net/tun:/dev/net/tun
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    # Use entrypoint to start tailscale and serve
+    entrypoint: [ "/bin/sh", "-c" ]
+    command:
+      - |
+        tailscaled --state=/var/lib/tailscale/tailscaled.state &
+        sleep 5
+        tailscale up --authkey=$${TS_AUTHKEY} --hostname=torn-market-web
+        tailscale serve --bg http://web:80
+        sleep infinity
+    restart: unless-stopped
+    profiles:
+      - external
+    depends_on:
+      - web
+
 volumes:
   db_data:
   redis_data:
   tailscale_data:
+  tailscale_web_data:
