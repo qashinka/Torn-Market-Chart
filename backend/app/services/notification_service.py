@@ -13,7 +13,7 @@ class NotificationService:
             url = os.getenv('DISCORD_WEBHOOK_URL')
         return url
 
-    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int):
+    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int, bazaar_seller_id: int = None):
         url = await self.get_webhook_url()
         if not url:
             logger.warning("Discord Webhook URL not configured. Skipping alert.")
@@ -30,9 +30,17 @@ class NotificationService:
         description = f"**{item_name}** is now **{formatted_price}** in the **{market_type}**!\n" \
                       f"Target: {condition} {formatted_target}"
 
+        # Generate URL based on market type
+        if market_type == "Bazaar" and bazaar_seller_id:
+            # Link directly to seller's bazaar
+            item_url = f"https://www.torn.com/bazaar.php?userId={bazaar_seller_id}#/"
+        else:
+            # Item Market search URL (default, also works for "Market/Bazaar" case)
+            item_url = f"https://www.torn.com/page.php?sid=ItemMarket#/market/view=search&itemID={item_id}"
+
         embed = {
-            "title": f"Price Alert: {item_name}",
-            "url": f"https://www.torn.com/imarket.php#/p=shop&step=shop&type={item_id}", # Deep link to item
+            "title": f"🔔 Price Alert: {item_name}",
+            "url": item_url,
             "description": description,
             "color": color,
             "footer": {
