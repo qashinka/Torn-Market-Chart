@@ -5,7 +5,7 @@ RUN apk add --no-cache socat
 
 # Copy startup script
 COPY start-proxy.sh /start-proxy.sh
-RUN chmod +x /start-proxy.sh
+RUN sed -i 's/\r$//' /start-proxy.sh && chmod +x /start-proxy.sh
 
 # Environment variables should be provided at runtime
 ENV REMOTE_DB_HOST=""

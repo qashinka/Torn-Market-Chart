@@ -67,6 +67,8 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips '*'
     volumes:
       - ./backend:/app
+    ports:
+      - "8000:8000"
     environment:
       # DB_HOST is fixed to 'mysql_host', which resolves to either 'db' or 'db-proxy'
       - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}

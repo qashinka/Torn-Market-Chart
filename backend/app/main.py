@@ -20,7 +20,7 @@ async def lifespan(app: FastAPI):
             if retries == 0:
                 raise e
             import logging
-            logging.getLogger("uvicorn").warning(f"Database not ready, retrying in 5 seconds... ({retries} retries left)")
+            logging.getLogger("uvicorn").warning(f"Database not ready: {e}, retrying in 5 seconds... ({retries} retries left)")
             import asyncio
             await asyncio.sleep(5)
     yield

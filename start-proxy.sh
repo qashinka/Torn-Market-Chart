@@ -28,4 +28,4 @@ fi
 
 # Start socat
 echo "Starting socat proxy forwarding 0.0.0.0:3306 -> ${REMOTE_DB_HOST}:3306"
-exec socat TCP-LISTEN:3306,fork,reuseaddr TCP:${REMOTE_DB_HOST}:3306
+exec socat TCP-LISTEN:3306,fork,bind=0.0.0.0 TCP:${REMOTE_DB_HOST}:3306
