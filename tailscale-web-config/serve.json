@@ -1,0 +1,16 @@
+{
+    "TCP": {
+        "443": {
+            "HTTPS": true
+        }
+    },
+    "Web": {
+        "torn-market-web.tail9ce48.ts.net:443": {
+            "Handlers": {
+                "/": {
+                    "Proxy": "http://web:80"
+                }
+            }
+        }
+    }
+}
