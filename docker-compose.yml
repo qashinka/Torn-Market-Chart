@@ -145,7 +145,7 @@ services:
       - |
         tailscaled --state=/var/lib/tailscale/tailscaled.state &
         sleep 5
-        tailscale up --authkey=$${TS_AUTHKEY} --hostname=torn-market-web
+        tailscale up --authkey=$${TS_AUTHKEY} --hostname=torn-market-web --accept-dns=false --reset
         tailscale serve --bg http://web:80
         sleep infinity
     restart: unless-stopped
