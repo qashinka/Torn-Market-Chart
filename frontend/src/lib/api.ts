@@ -133,3 +133,26 @@ export const getOrderBook = async (itemId: number) => {
     const response = await api.get<OrderBookResponse>(`/items/${itemId}/orderbook`);
     return response.data;
 };
+
+export interface Alert {
+    id: number;
+    item_id: number;
+    target_price: number;
+    condition: 'above' | 'below';
+    is_active: boolean;
+    is_persistent: boolean;
+}
+
+export const getAlerts = async (itemId: number) => {
+    const response = await api.get<Alert[]>(`/alerts/item/${itemId}`);
+    return response.data;
+};
+
+export const createAlert = async (itemId: number, target_price: number, condition: string, is_persistent: boolean = false) => {
+    const response = await api.post<Alert>('/alerts/', { item_id: itemId, target_price, condition, is_persistent });
+    return response.data;
+};
+
+export const deleteAlert = async (id: number) => {
+    await api.delete(`/alerts/${id}`);
+};

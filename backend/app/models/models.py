@@ -63,6 +63,7 @@ class PriceAlert(Base):
     target_price = Column(BigInteger, nullable=False)
     condition = Column(String(10), nullable=False) # "above", "below"
     is_active = Column(Boolean, default=True)
+    is_persistent = Column(Boolean, default=False)  # False = one-time, True = recurring
 
     item = relationship("Item", back_populates="alerts")
 

@@ -135,6 +135,7 @@ class PriceService:
             chunks = [items_to_process[i:i + chunk_size] for i in range(0, len(items_to_process), chunk_size)]
             
             processed_count = 0
+            all_price_updates = []  # Accumulate ALL updates for alert checking
             
             for i, chunk in enumerate(chunks):
                 # Extract IDs for this chunk
@@ -149,7 +150,7 @@ class PriceService:
                 fetched_data = await torn_api_service.get_items(chunk_ids, include_listings=True)
                 
                 # Save data
-                price_updates = []
+                price_updates = []  # Per-chunk updates for DB insert
                 now = datetime.utcnow()
                 
                 for item in chunk:
@@ -181,6 +182,7 @@ class PriceService:
 
                     price_updates.append({
                         "item_id": item.id,
+                        "item_name": item.name, # Added for alerts
                         "timestamp": now,
                         "market_price": market_price,
                         "bazaar_price": bazaar_price,
@@ -205,20 +207,115 @@ class PriceService:
                         item.orderbook_snapshot = json.dumps(snapshot)
                 
                 if price_updates:
-                    stmt = insert(PriceLog).values(price_updates)
+                    # Filter out keys not in PriceLog model (like item_name)
+                    db_inserts = [{k: v for k, v in u.items() if k != 'item_name'} for u in price_updates]
+                    stmt = insert(PriceLog).values(db_inserts)
                     await session.execute(stmt)
                     await session.commit()
                     processed_count += len(price_updates)
+                    all_price_updates.extend(price_updates)  # Accumulate for alert check
             
             logger.info(f"Finished updating prices. Total processed: {processed_count}")
 
-            # 4. Check Alerts (Simplified)
-            # await self.check_alerts(session, [])
+            # 4. Check Alerts (using ALL accumulated updates)
+            await self.check_alerts(session, all_price_updates)
 
     async def check_alerts(self, session, price_updates):
-        # Load alerts
-        # This is simple check.
-        pass
+        """
+        Check active alerts against the latest price updates.
+        price_updates: List of dicts {item_id, market_price, bazaar_price, ...}
+        """
+        from app.models.models import PriceAlert
+        from app.services.notification_service import notification_service
+        
+        if not price_updates:
+            return
+
+        # Extract item IDs from updates
+        updated_item_ids = [u['item_id'] for u in price_updates]
+        
+        # 1. Fetch active alerts for these items
+        stmt = select(PriceAlert).where(
+            PriceAlert.item_id.in_(updated_item_ids),
+            PriceAlert.is_active == True
+        )
+        result = await session.execute(stmt)
+        active_alerts = result.scalars().all()
+        
+        if not active_alerts:
+            return
+
+        # Map updates for quick lookup
+        updates_map = {u['item_id']: u for u in price_updates}
+        
+        alerts_triggered = []
+        
+        for alert in active_alerts:
+            update = updates_map.get(alert.item_id)
+            if not update:
+                continue
+                
+            market_price = update.get('market_price') or 0
+            bazaar_price = update.get('bazaar_price') or 0
+            
+            # We check both prices against the target? 
+            # Usually users want "Cheapest available price".
+            # So let's check the minimum non-zero price.
+            prices = []
+            if market_price > 0: prices.append(market_price)
+            if bazaar_price > 0: prices.append(bazaar_price)
+            
+            if not prices:
+                logger.info(f"Alert Check: Item {alert.item_id} has no valid prices. Skipping.")
+                continue
+                
+            best_price = min(prices)
+            market_type = "Market" if best_price == market_price else "Bazaar"
+            if market_price > 0 and bazaar_price > 0 and market_price == bazaar_price:
+                market_type = "Market/Bazaar"
+
+            logger.info(f"Alert Check: Item {alert.item_id}. Best Price: {best_price}. Target: {alert.target_price} ({alert.condition})")
+
+            triggered = False
+            if alert.condition == 'below' and best_price < alert.target_price:
+                triggered = True
+            elif alert.condition == 'above' and best_price > alert.target_price:
+                triggered = True
+            
+            if triggered:
+                # Send Notification
+                # We need item Name.. verifying if it's in update or we need to fetch.
+                # The update dict doesn't have name. Item object has it.
+                # Optimization: In `update_all_prices`, we have the `item` objects.
+                # But here we only have IDs.
+                # Let's just fetch item name or assume we can get it from relationship if eager loaded.
+                # For now, let's just re-fetch or use what we have.
+                # Actually, `alert.item` relationship should work if lazy loading is async-compatible or we join it.
+                # asyncmy/sqlalchemy async relationships often require explicit options. 
+                # Let's do a quick lookup query or pass Item names in price_updates?
+                # Passing names in price_updates is easier.
+                pass
+                
+                # We will trigger the notification task
+                item_name = update.get('item_name', f"Item {alert.item_id}")
+                await notification_service.send_discord_alert(
+                    item_name=item_name,
+                    item_id=alert.item_id,
+                    price=best_price,
+                    market_type=market_type,
+                    condition=alert.condition,
+                    target_price=alert.target_price
+                )
+                
+                # Deactivate alert only if it's a one-time alert
+                if not alert.is_persistent:
+                    alert.is_active = False
+                alerts_triggered.append(alert)
+        
+        if alerts_triggered:
+            # Commit changes (deactivations)
+            await session.commit()
+            logger.info(f"Triggered {len(alerts_triggered)} alerts.")
 
     async def downsample_data(self):
         """

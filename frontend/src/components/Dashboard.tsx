@@ -5,6 +5,7 @@ import { ArrowLeft } from 'lucide-react';
 import { PriceChart } from './PriceChart';
 import { AutocompleteInput } from './AutocompleteInput';
 import { OrderBookButton } from './OrderBookButton';
+import { AlertManager } from './AlertManager';
 import { getItems, getHistory, Item, PricePoint } from '@/lib/api';
 import { calculateMovingAverage } from '@/lib/stats';
 
@@ -139,6 +140,7 @@ export function Dashboard() {
                                             ID: {currentItem.torn_id}
                                         </p>
                                         <OrderBookButton itemId={currentItem.torn_id} itemName={currentItem.name} />
+                                        <AlertManager itemId={currentItem.id} itemName={currentItem.name} />
                                     </div>
                                 </div>
                             </div>

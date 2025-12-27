@@ -7,8 +7,8 @@ engine = create_async_engine(
     echo=False, # Set to True for debugging SQL
     future=True,
     pool_pre_ping=True,
-    pool_size=20,
-    max_overflow=10
+    pool_size=5,
+    max_overflow=0
 )
 
 SessionLocal = async_sessionmaker(

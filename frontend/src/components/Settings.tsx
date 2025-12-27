@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getApiKeys, createApiKey, deleteApiKey, getSystemConfig, updateSystemConfig } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trash2, Plus, Key, Settings as SettingsIcon } from 'lucide-react';
+import { Trash2, Plus, Key, Settings as SettingsIcon, Bell } from 'lucide-react';
 
 export function Settings() {
     const queryClient = useQueryClient();
@@ -102,7 +102,85 @@ export function Settings() {
             </Card>
 
             <ConfigSettings />
+            <NotificationSettings />
         </div>
+    );
+}
+
+function NotificationSettings() {
+    const queryClient = useQueryClient();
+    const [webhookUrl, setWebhookUrl] = useState('');
+
+    const { data: config, isLoading } = useQuery({
+        queryKey: ['systemConfig'],
+        queryFn: getSystemConfig,
+        staleTime: 0
+    });
+
+    React.useEffect(() => {
+        if (config) {
+            setWebhookUrl(config['discord_webhook_url'] || '');
+        }
+    }, [config]);
+
+    const updateMutation = useMutation({
+        mutationFn: async () => {
+            await updateSystemConfig({
+                'discord_webhook_url': webhookUrl
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['systemConfig'] });
+            alert("Notification settings saved.");
+        }
+    });
+
+    const handleSave = (e: React.FormEvent) => {
+        e.preventDefault();
+        updateMutation.mutate();
+    };
+
+    return (
+        <Card className="bg-zinc-900 border-zinc-800 text-white">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <Bell className="w-5 h-5" />
+                    Notifications
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                {isLoading ? <p>Loading...</p> : (
+                    <form onSubmit={handleSave} className="space-y-4">
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-2">
+                                Discord Webhook URL
+                            </label>
+                            <div className="flex gap-2">
+                                <input
+                                    type="password"
+                                    placeholder="https://discord.com/api/webhooks/..."
+                                    className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 flex-grow text-white"
+                                    value={webhookUrl}
+                                    onChange={(e) => setWebhookUrl(e.target.value)}
+                                />
+                            </div>
+                            <p className="text-xs text-gray-500 mt-1">
+                                Alerts will be sent to this channel.
+                            </p>
+                        </div>
+                        <div className="flex justify-end">
+                            <button
+                                type="submit"
+                                disabled={updateMutation.isPending}
+                                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded font-medium"
+                            >
+                                {updateMutation.isPending ? 'Saving...' : 'Save Webhook'}
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 
