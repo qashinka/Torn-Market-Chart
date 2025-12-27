@@ -80,4 +80,4 @@ class SystemConfig(Base):
     __tablename__ = 'system_config'
 
     key = Column(String(100), primary_key=True)
-    value = Column(String(255), nullable=True)
+    value = Column(String(512), nullable=True)  # Increased for long URLs like Discord webhooks

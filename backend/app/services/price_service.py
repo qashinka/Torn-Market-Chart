@@ -180,14 +180,23 @@ class PriceService:
                         if item.failure_count >= FAILURE_THRESHOLD_LOW:
                              logger.info(f"Item {item.name} ({item.torn_id}) failed {item.failure_count} times (API Error). Backing off.")
 
+                    # Get cheapest bazaar seller ID for notification URL
+                    cheapest_bazaar_seller = None
+                    if data and data.get('listings') and data['listings'].get('bazaar'):
+                        bazaar_list = data['listings']['bazaar']
+                        if bazaar_list and len(bazaar_list) > 0:
+                            cheapest_bazaar_seller = bazaar_list[0].get('id')  # seller ID
+
                     price_updates.append({
                         "item_id": item.id,
+                        "torn_id": item.torn_id,  # For Torn Market URL
                         "item_name": item.name, # Added for alerts
                         "timestamp": now,
                         "market_price": market_price,
                         "bazaar_price": bazaar_price,
                         "market_price_avg": market_price_avg,
-                        "bazaar_price_avg": bazaar_price_avg
+                        "bazaar_price_avg": bazaar_price_avg,
+                        "cheapest_bazaar_seller": cheapest_bazaar_seller  # For Bazaar URL
                     })
 
                     # Update Item cache
@@ -207,8 +216,8 @@ class PriceService:
                         item.orderbook_snapshot = json.dumps(snapshot)
                 
                 if price_updates:
-                    # Filter out keys not in PriceLog model (like item_name)
-                    db_inserts = [{k: v for k, v in u.items() if k != 'item_name'} for u in price_updates]
+                    # Filter out keys not in PriceLog model (like item_name, torn_id, cheapest_bazaar_seller)
+                    db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller')} for u in price_updates]
                     stmt = insert(PriceLog).values(db_inserts)
                     await session.execute(stmt)
                     await session.commit()
@@ -298,13 +307,17 @@ class PriceService:
                 
                 # We will trigger the notification task
                 item_name = update.get('item_name', f"Item {alert.item_id}")
+                torn_id = update.get('torn_id', alert.item_id)  # Use torn_id for URL
+                bazaar_seller_id = update.get('cheapest_bazaar_seller')  # For Bazaar URL
+                logger.info(f"Sending alert for {item_name}: torn_id={torn_id}, market_type={market_type}, bazaar_seller={bazaar_seller_id}")
                 await notification_service.send_discord_alert(
                     item_name=item_name,
-                    item_id=alert.item_id,
+                    item_id=torn_id,  # This is now torn_id for correct URL
                     price=best_price,
                     market_type=market_type,
                     condition=alert.condition,
-                    target_price=alert.target_price
+                    target_price=alert.target_price,
+                    bazaar_seller_id=bazaar_seller_id
                 )
                 
                 # Deactivate alert only if it's a one-time alert
