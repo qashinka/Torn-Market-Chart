@@ -23,7 +23,7 @@ done
 # Authenticate if needed
 if [ -n "$TS_AUTHKEY" ]; then
     echo "Authenticating with Tailscale..."
-    tailscale up --authkey="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-db-proxy}"
+    tailscale up --authkey="${TS_AUTHKEY}" --hostname="${TS_HOSTNAME:-db-proxy}" --reset
 fi
 
 # Start socat
