@@ -23,6 +23,12 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
 - **Per-Key Tracking**: Monitor last usage time and status for each key
 - **Fallback Support**: Uses environment variable as fallback if no DB keys configured
 
+### 🔔 Price Alerts
+- **Discord Notifications**: Get notified via Discord Webhook when prices hit your targets
+- **Flexible Conditions**: Set alerts for prices going above or below specific thresholds
+- **One-time or Recurring**: Choose between single-trigger alerts or persistent monitoring
+- **Auto-tracking**: Items with alerts are automatically tracked for price updates
+
 ### ⚙️ Smart Price Updates
 - **Concurrent Fetching**: Parallelized API requests with semaphore-controlled concurrency (limit: 5)
 - **Error Resilience**: Failed fetches don't block other items; recorded with timestamp
@@ -166,6 +172,9 @@ When adding new columns:
 - `GET /api/v1/settings/apikeys` - List API keys
 - `POST /api/v1/settings/apikeys` - Add API key
 - `DELETE /api/v1/settings/apikeys/{id}` - Remove API key
+- `GET /api/v1/alerts/item/{id}` - Get alerts for item
+- `POST /api/v1/alerts` - Create price alert
+- `DELETE /api/v1/alerts/{id}` - Delete price alert
 
 ## License
 

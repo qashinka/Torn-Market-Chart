@@ -3,6 +3,12 @@
 ## 時系列ログ
 
 ### 2025-12-27
+*   **機能: 価格アラート実装:**
+    *   *バックエンド:* `NotificationService` (Discord Webhook) を実装。`PriceService.check_alerts` でアラート条件を評価し通知を送信。
+    *   *フロントエンド:* `AlertManager` コンポーネント（作成/削除UI）を実装。`Settings.tsx` に通知設定を追加。
+    *   *デバッグ:* 複数のバグを修正（`price_updates` スコープ問題、アイテム自動追跡、DBプール設定）。
+*   **機能: 永続アラートオプション:** `PriceAlert` モデルに `is_persistent` カラムを追加。UIでワンタイム/繰り返しを選択可能に。
+*   **改善: .env.example 更新:** `REMOTE_DB_HOST` と `COMPOSE_PROFILES` のドキュメントを整備。
 *   **プロジェクトドキュメント初期化:** スペック、履歴、タスクを整理するための Single Source of Truth (`.ai/` フォルダ) の作成を開始。
 *   **エージェント環境設定:** AIエージェント用のルール (`.agent/rules`) とワークフロー (`.agent/workflows`) を整備。コーディング規約とDBマイグレーション手順を追加。
 *   **ドキュメント日本語化:** `.ai/` フォルダ内のドキュメントを日本語に翻訳。
