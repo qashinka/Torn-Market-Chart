@@ -101,9 +101,85 @@ export function Settings() {
                 </CardContent>
             </Card>
 
+            <WebSocketSettings />
             <ConfigSettings />
             <NotificationSettings />
         </div>
+    );
+}
+
+function WebSocketSettings() {
+    const queryClient = useQueryClient();
+    const [token, setToken] = useState('');
+
+    const { data: config, isLoading } = useQuery({
+        queryKey: ['systemConfig'],
+        queryFn: getSystemConfig,
+        staleTime: 0
+    });
+
+    React.useEffect(() => {
+        if (config) {
+            setToken(config['torn_ws_token'] || '');
+        }
+    }, [config]);
+
+    const updateMutation = useMutation({
+        mutationFn: async () => {
+            await updateSystemConfig({
+                'torn_ws_token': token
+            });
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['systemConfig'] });
+            alert("WebSocket settings saved. Service will pick it up automatically.");
+        }
+    });
+
+    const handleSave = (e: React.FormEvent) => {
+        e.preventDefault();
+        updateMutation.mutate();
+    };
+
+    return (
+        <Card className="bg-zinc-900 border-zinc-800 text-white">
+            <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                    <SettingsIcon className="w-5 h-5 text-blue-400" />
+                    WebSocket Configuration
+                </CardTitle>
+            </CardHeader>
+            <CardContent>
+                {isLoading ? <p>Loading...</p> : (
+                    <form onSubmit={handleSave} className="space-y-4">
+                        <div>
+                            <label className="block text-sm text-gray-400 mb-2">
+                                Torn WebSocket Token
+                            </label>
+                            <input
+                                type="text"
+                                className="bg-zinc-800 border border-zinc-700 rounded px-3 py-2 w-full text-white font-mono text-sm"
+                                placeholder="Execute `copy(document.cookie)` in console to find token..."
+                                value={token}
+                                onChange={(e) => setToken(e.target.value)}
+                            />
+                            <p className="text-xs text-gray-500 mt-1">
+                                Required for real-time Item Market updates.
+                            </p>
+                        </div>
+                        <div className="flex justify-end">
+                            <button
+                                type="submit"
+                                disabled={updateMutation.isPending}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded font-medium"
+                            >
+                                {updateMutation.isPending ? 'Saving...' : 'Save Token'}
+                            </button>
+                        </div>
+                    </form>
+                )}
+            </CardContent>
+        </Card>
     );
 }
 

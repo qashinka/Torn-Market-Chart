@@ -98,6 +98,22 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  websocket:
+    build: ./backend
+    container_name: torn_websocket
+    command: python run_ws.py
+    volumes:
+      - ./backend:/app
+    environment:
+      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
+      - REDIS_URL=redis://redis:6379/0
+      # TORN_WS_TOKEN is loaded from DB, but we pass other envs just in case
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+    depends_on:
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
   web:
     build: ./frontend
     container_name: torn_web

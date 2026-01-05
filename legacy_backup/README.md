@@ -15,13 +15,22 @@ Torn Cityのアイテム価格を追跡・可視化するWebアプリケーシ�
 - **アイテム検索**: アイテム名での検索とオートコンプリート機能により、追跡アイテムを簡単に追加できます。
 - **APIキーローテーション**: 複数のAPIキーを登録し、リクエストを分散させることができます。
 - **Docker化**: Docker Composeを使用して簡単にデプロイできます。
-- **データベースサポート**: MySQL 8.0（Docker環境）およびSQLiteをサポートします。
+- **即時価格通知 (WebSocket)**:
+    - **インスタントアラート**: アイテム価格が更新された瞬間（サブ秒単位）にDiscord通知を送信します。
+    - **ハイブリッド取得**: WebSocketによるリアルタイム更新（`minPrice`）と、1分ごとのAPIポーリング（詳細データ）を組み合わせ。
+    - **自動購読**: 追跡アイテムの価格変動を自動的にリアルタイム監視します。
+    - **高可用性**: トークン切れ検知や自動再接続機能を搭載。
+
+- **スマートな更新ロジック**:
+    - **並列取得**: APIリクエストを並列化し効率的にデータを取得（同時実行数制限あり）。
+    - **エラー耐性**: 取得失敗時も他のアイテムに影響を与えず、バックオフ戦略でAPI負荷を制御。
+    - **スナップショット**: 市場/バザールの上位5件をDBに保存し、即座に表示可能。
 
 ## 技術スタック
 
-- **バックエンド**: Python (FastAPI), SQLAlchemy, APScheduler, curl_cffi
-- **フロントエンド**: HTML5, Vanilla JS, TradingView Lightweight Charts
-- **データベース**: MySQL 8.0 (または SQLite)
+- **バックエンド**: Python (FastAPI), SQLAlchemy (`asyncmy`), APScheduler, websockets, curl_cffi
+- **フロントエンド**: React 18, Vite, Lightweight Charts, TanStack Query, TailwindCSS
+- **データベース**: MySQL 8.0, Redis (キャッシュ & レート制限)
 - **コンテナ化**: Docker, Docker Compose
 
 ## セットアップと実行
@@ -41,8 +50,10 @@ Torn Cityのアイテム価格を追跡・可視化するWebアプリケーシ�
    ブラウザを開き、`http://localhost:5000`にアクセスします。
 
 4. **設定:**
-   - UIの「Settings」をクリックします。
-   - **Torn API Key**を追加します（複数追加可能）。
+   - UIのサイドバーから「Settings」ページに移動します。
+   - **API Keys**: ポーリング用のTorn API Keyを追加します。
+   - **WebSocket Configuration**: リアルタイム更新用のWebSocket Tokenを入力します。
+   - **Notifications**: Discord Webhook URLを設定します。
    - 追跡するアイテムを名前で検索するか、IDを入力して追加します。
 
 ## 開発
