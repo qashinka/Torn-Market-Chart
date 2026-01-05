@@ -61,5 +61,28 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to send Discord alert: {e}")
 
+    async def send_system_alert(self, title: str, message: str, color: int = 0xFF0000):
+        url = await self.get_webhook_url()
+        if not url:
+            return
+
+        embed = {
+            "title": f"⚠️ System Alert: {title}",
+            "description": message,
+            "color": color,
+            "footer": {
+                "text": "Torn Market Chart System"
+            },
+            "timestamp": datetime.utcnow().isoformat()
+        }
+        
+        payload = { "embeds": [embed] }
+        
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.post(url, json=payload, timeout=10.0)
+        except Exception as e:
+            logger.error(f"Failed to send system alert: {e}")
+
 from datetime import datetime
 notification_service = NotificationService()

@@ -11,7 +11,6 @@ import { getItems, Item } from '@/lib/api';
 
 export function Dashboard() {
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    // Store temporarily selected item object for display if not in the tracked list
     const [temporaryItem, setTemporaryItem] = useState<Item | null>(null);
 
     const { data: items, isLoading } = useQuery<Item[]>({
@@ -38,9 +37,6 @@ export function Dashboard() {
     // But changing that logic might affect desktop. 
     // Let's stick to the conditional CSS approach first.
 
-
-
-
     const handleTemporarySelect = (item: Item) => {
         setTemporaryItem(item);
         setSelectedItemId(item.id);
@@ -61,6 +57,7 @@ export function Dashboard() {
 
     return (
         <div className="flex h-full relative">
+
             {/* Desktop Collapsible Sidebar */}
             <div
                 className={`
@@ -72,9 +69,11 @@ export function Dashboard() {
             >
                 <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
                     <h2 className="text-xl font-bold text-white whitespace-nowrap overflow-hidden">Overview</h2>
-                    <button onClick={() => setIsSidebarOpen(false)} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white">
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
+                    <div className="flex gap-1">
+                        <button onClick={() => setIsSidebarOpen(false)} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white">
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
                 <div className="p-4 py-2">
                     <AutocompleteInput onSelect={handleTemporarySelect} />

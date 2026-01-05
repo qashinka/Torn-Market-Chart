@@ -29,6 +29,12 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
 - **One-time or Recurring**: Choose between single-trigger alerts or persistent monitoring
 - **Auto-tracking**: Items with alerts are automatically tracked for price updates
 
+### ⚡ Real-time Price Updates (WebSocket)
+- **Instant Alerts**: Triggers Discord notifications immediately when prices drop (sub-second latency).
+- **Hybrid Fetching**: Real-time `minPrice` updates via WebSocket + 1-minute full sync via API.
+- **Auto-Subscription**: Automatically subscribes to real-time updates for all tracked items.
+- **Resilient**: Auto-reconnection logic and alerts for token expiration.
+
 ### ⚙️ Smart Price Updates
 - **Concurrent Fetching**: Parallelized API requests with semaphore-controlled concurrency (limit: 5)
 - **Error Resilience**: Failed fetches don't block other items; recorded with timestamp
@@ -76,10 +82,11 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
 
 3. Access the dashboard at `http://localhost:3000`
 
-4. Configure API Keys:
-   - Navigate to **Settings** page
-   - Add one or more Torn API keys
-   - Keys will be automatically rotated during price fetching
+4. Configure Settings:
+   - Navigate to **Settings** page (Sidebar)
+   - **API Keys**: Add Torn API keys for polling.
+   - **WebSocket**: Enter your Torn WebSocket Token for real-time updates.
+   - **Notifications**: Configure Discord Webhook URL.
 
 5. Track Items:
    - Go to **Manage Items**
@@ -92,6 +99,7 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
 - **FastAPI**: Modern Python web framework with async support
 - **SQLAlchemy**: ORM with async MySQL/MariaDB support (`asyncmy`)
 - **APScheduler**: Background job scheduling for periodic price updates
+- **websockets**: Python client for Torn's WebSocket updates
 - **Redis**: Rate limiting and API key rotation management
 - **curl_cffi**: Cloudflare-bypassing HTTP client for bazaar scraping
 
@@ -127,7 +135,7 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
                     └──────────────┘              
                            │                      
                            ▼                      
-                    ┌──────────────┐              
+                       ┌──────────────┐              
                     │   Worker     │              
                     │ (APScheduler)│              
                     └──────────────┘              
@@ -138,6 +146,17 @@ Torn City Market Tracker & Visualization Tool with TradingView-like charts and r
          │  Torn API   │       │ weav3r.dev  │   
          │  (Market)   │       │  (Bazaar)   │   
          └─────────────┘       └─────────────┘   
+
+                    ┌──────────────┐
+                    │  WebSocket   │◀───┐
+                    │   Service    │    │
+                    └──────┬───────┘    │
+                           │            │
+                           ▼            │
+                    ┌─────────────┐     │
+                    │  Torn WS    │─────┘
+                    │   Server    │
+                    └─────────────┘
 ```
 
 ## Development
