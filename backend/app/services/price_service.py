@@ -35,74 +35,31 @@ class PriceService:
             rate_limit = base_limit * key_count
             logger.info(f"Rate Limit Config: {base_limit}/key. Active Keys: {key_count}. Effective Limit: {rate_limit} req/min.")
 
+            # PHASE 1: Priority Items (Tracked)
             # 1. Get all tracked items (Priority 1)
             result = await session.execute(select(Item).where(Item.is_tracked))
             tracked_items = result.scalars().all()
             
-            # Simple Rate Limiter Logic for this run
-            # We want to process ALL tracked items if possible, but we are bound by rate_limit * time?
-            # Actually, user wants tracked items to be updated every cycle (every minute).
-            # So rate_limit MUST be >= tracked_items count for optimal performance.
-            # If rate_limit < tracked_items, we process what we can (first N tracked).
+            logger.info(f"Phase 1: Fetching {len(tracked_items)} priority items...")
+            priority_updates = await self._process_items(session, tracked_items)
             
-            # Additional Request: Use "Spare" capacity for untracked items.
-            # 1. Update Tracked Items
-            # 2. If count < rate_limit, fetch Untracked Items (oldest updated first) and update them.
-            
-            items_to_process = []
-            now_utc = datetime.utcnow()
-            
-            # Backoff Strategy Constants
-            FAILURE_THRESHOLD_LOW = 5   # If failures >= 5, check every 10 min
-            FAILURE_THRESHOLD_HIGH = 20 # If failures >= 20, check every 60 min
-            BACKOFF_LOW_MINUTES = 10
-            BACKOFF_HIGH_MINUTES = 60
-            
-            # Filter Tracked Items
-            # Always fetch tracked items (User requirement: prioritization)
-            for item in tracked_items:
-                items_to_process.append(item)
+            # Check Alerts immediately for priority items
+            if priority_updates:
+                logger.info("Phase 1: Checking alerts for priority items...")
+                await self.check_alerts(session, priority_updates)
 
-            tracked_count_filtered = len(items_to_process)
+            # Calculate remaining capacity
+            remaining_capacity = rate_limit - len(tracked_items)
             
-            if tracked_count_filtered < rate_limit:
-                remaining_capacity = rate_limit - tracked_count_filtered
-                logger.info(f"Tracked items: {tracked_count_filtered}. Spare capacity: {remaining_capacity}. Fetching untracked items...")
+            if remaining_capacity > 0:
+                # PHASE 2: Routine Items (Untracked)
+                items_to_process = []
                 
-                # Fetch untracked items
-                # Exclude items that satisfy the backoff condition:
-                # (FC >= HIGH and Updated > Now - 60m) OR (FC >= LOW and Updated > Now - 10m)
-                
-                # In SQL logic for Exclusion:
-                # WHERE is_tracked = False AND NOT ( ... )
-                
-                # Since we want to update checking often, constructing this query:
+                # Fetch untracked items logic (Unchanged)
                 from sqlalchemy import or_, and_
                 
                 limit_high = now_utc - timedelta(minutes=BACKOFF_HIGH_MINUTES)
                 limit_low = now_utc - timedelta(minutes=BACKOFF_LOW_MINUTES)
-                
-                # Condition for items TO IGNORE (Backoff active)
-                # Ignore if: (Fail >= High AND LastUpd > limit_high) OR (Fail >= Low AND LastUpd > limit_low)
-                
-                # So we select items where NOT that condition.
-                # De Morgan's:
-                # Select where:
-                # (Fail < High OR LastUpd <= limit_high) AND (Fail < Low OR LastUpd <= limit_low)
-                
-                # Simpler:
-                # is_tracked == False
-                # AND (failure_count < LOW OR last_updated_at <= limit_low) 
-                # AND (failure_count < HIGH OR last_updated_at <= limit_high) # Redundant if limit_high < limit_low? 
-                
-                # Actually, simpler to just say:
-                # We want eligible items.
-                # An item is eligible if:
-                # 1. failure_count < LOW
-                # OR
-                # 2. failure_count >= LOW AND failure_count < HIGH AND last_updated_at <= limit_low
-                # OR
-                # 3. failure_count >= HIGH AND last_updated_at <= limit_high
                 
                 stmt = select(Item).where(
                     Item.is_tracked == False,
@@ -122,112 +79,140 @@ class PriceService:
                 
                 result = await session.execute(stmt)
                 untracked_items = result.scalars().all()
-                items_to_process.extend(untracked_items)
-            
-            total_items = len(items_to_process)
-            logger.info(f"Targeting usage: {rate_limit} req/min. Total items to update in this cycle: {total_items}")
-            
-            # Limit strictly to rate limit
-            items_to_process = items_to_process[:rate_limit]
-
-            # Chunk Process
-            chunk_size = 50 
-            chunks = [items_to_process[i:i + chunk_size] for i in range(0, len(items_to_process), chunk_size)]
-            
-            processed_count = 0
-            all_price_updates = []  # Accumulate ALL updates for alert checking
-            
-            for i, chunk in enumerate(chunks):
-                # Extract IDs for this chunk
-                chunk_ids = [item.torn_id for item in chunk]
                 
-                if not chunk_ids:
-                    continue
-
-                logger.info(f"Processing batch {i+1}/{len(chunks)} ({len(chunk_ids)} items)")
-                
-                # Fetch data for this chunk
-                fetched_data = await torn_api_service.get_items(chunk_ids, include_listings=True)
-                
-                # Save data
-                price_updates = []  # Per-chunk updates for DB insert
-                now = datetime.utcnow()
-                
-                for item in chunk:
-                    data = fetched_data.get(item.torn_id)
-                    market_price = 0
-                    bazaar_price = 0
-                    market_price_avg = 0
-                    bazaar_price_avg = 0
-                    status = {}
+                if untracked_items:
+                    logger.info(f"Phase 2: Fetching {len(untracked_items)} routine items (Spare capacity: {remaining_capacity})...")
+                    routine_updates = await self._process_items(session, untracked_items)
                     
-                    if data:
-                        market_price = data.get('market_price', 0)
-                        bazaar_price = data.get('bazaar_price', 0)
-                        market_price_avg = data.get('market_price_avg', 0)
-                        bazaar_price_avg = data.get('bazaar_price_avg', 0)
-                        status = data.get('status', {})
-                    else:
-                        logger.warning(f"Failed to fetch data for item {item.name} ({item.torn_id})")
-                    
-                    # Update Failure Count
-                    # Success = API request succeeded (even if price is 0/OOS)
-                    # Failure = API request failed (network error, rate limit, etc.)
-                    if status.get('market') or status.get('bazaar'):
-                        item.failure_count = 0
-                    else:
-                        item.failure_count = (item.failure_count or 0) + 1
-                        if item.failure_count >= FAILURE_THRESHOLD_LOW:
-                             logger.info(f"Item {item.name} ({item.torn_id}) failed {item.failure_count} times (API Error). Backing off.")
+                    # Check Alerts for routine items (User request: "just in case")
+                    if routine_updates:
+                         logger.info("Phase 2: Checking alerts for routine items...")
+                         await self.check_alerts(session, routine_updates)
+            
+            logger.info("Finished price update cycle.")
 
-                    # Get cheapest bazaar seller ID for notification URL
-                    cheapest_bazaar_seller = None
+    async def _process_items(self, session, items):
+        """
+        Helper to fetch and save prices for a list of items.
+        Returns a list of price_updates dictionaries.
+        """
+        from app.services.torn_api import torn_api_service
+        from datetime import datetime
+        
+        if not items:
+            return []
+
+        # Chunk Process
+        chunk_size = 50 
+        chunks = [items[i:i + chunk_size] for i in range(0, len(items), chunk_size)]
+        
+        all_price_updates = []
+        processed_count = 0
+        
+        for i, chunk in enumerate(chunks):
+            # Extract IDs for this chunk
+            chunk_ids = [item.torn_id for item in chunk]
+            
+            if not chunk_ids:
+                continue
+
+            # logger.info(f"Processing batch {i+1}/{len(chunks)} ({len(chunk_ids)} items)")
+            
+            # Fetch data for this chunk
+            fetched_data = await torn_api_service.get_items(chunk_ids, include_listings=True)
+            
+            # Save data
+            price_updates = []  # Per-chunk updates for DB insert
+            now = datetime.utcnow()
+            
+            for item in chunk:
+                data = fetched_data.get(item.torn_id)
+                market_price = 0
+                bazaar_price = 0
+                market_price_avg = 0
+                bazaar_price_avg = 0
+                status = {}
+                
+                if data:
+                    market_price = data.get('market_price', 0)
+                    bazaar_price = data.get('bazaar_price', 0)
+                    market_price_avg = data.get('market_price_avg', 0)
+                    bazaar_price_avg = data.get('bazaar_price_avg', 0)
+                    status = data.get('status', {})
+                else:
+                    logger.warning(f"Failed to fetch data for item {item.name} ({item.torn_id})")
+                
+                # Update Failure Count
+                if status.get('market') or status.get('bazaar'):
+                    item.failure_count = 0
+                else:
+                    item.failure_count = (item.failure_count or 0) + 1
+                    # Log removed to reduce noise
+
+                # Get best listing ID for deduplication
+                # If Market/Bazaar: Use Listing ID (Market) or Seller ID (Bazaar)
+                best_listing_id = None
+                
+                # Check IDs based on what is cheapest
+                if market_price > 0 and (bazaar_price == 0 or market_price < bazaar_price):
+                    # Market is cheapest
+                    if data and data.get('listings') and data['listings'].get('market'):
+                        market_list = data['listings']['market']
+                        if market_list and len(market_list) > 0:
+                            best_listing_id = str(market_list[0].get('id'))
+                elif bazaar_price > 0:
+                    # Bazaar is cheapest (or equal)
                     if data and data.get('listings') and data['listings'].get('bazaar'):
                         bazaar_list = data['listings']['bazaar']
                         if bazaar_list and len(bazaar_list) > 0:
-                            cheapest_bazaar_seller = bazaar_list[0].get('id')  # seller ID
+                            best_listing_id = str(bazaar_list[0].get('id'))
 
-                    price_updates.append({
-                        "item_id": item.id,
-                        "torn_id": item.torn_id,  # For Torn Market URL
-                        "item_name": item.name, # Added for alerts
-                        "timestamp": now,
-                        "market_price": market_price,
-                        "bazaar_price": bazaar_price,
-                        "market_price_avg": market_price_avg,
-                        "bazaar_price_avg": bazaar_price_avg,
-                        "cheapest_bazaar_seller": cheapest_bazaar_seller  # For Bazaar URL
-                    })
-
-                    # Update Item cache
-                    item.last_market_price = market_price
-                    item.last_bazaar_price = bazaar_price
-                    item.last_market_price_avg = market_price_avg
-                    item.last_bazaar_price_avg = bazaar_price_avg
-                    item.last_updated_at = now
-                    
-                    # Save orderbook snapshot (top 5 for each)
-                    if data and data.get('listings'):
-                        import json
-                        snapshot = {
-                            "market": data['listings'].get('market', [])[:5],
-                            "bazaar": data['listings'].get('bazaar', [])[:5],
-                        }
-                        item.orderbook_snapshot = json.dumps(snapshot)
+                # Get cheapest bazaar seller ID for notification URL (This is same as best_listing_id if Bazaar is cheapest)
+                cheapest_bazaar_seller = None
+                if data and data.get('listings') and data['listings'].get('bazaar'):
+                    bazaar_list = data['listings']['bazaar']
+                    if bazaar_list and len(bazaar_list) > 0:
+                        cheapest_bazaar_seller = bazaar_list[0].get('id')  # seller ID
                 
-                if price_updates:
-                    # Filter out keys not in PriceLog model (like item_name, torn_id, cheapest_bazaar_seller)
-                    db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller')} for u in price_updates]
-                    stmt = insert(PriceLog).values(db_inserts)
-                    await session.execute(stmt)
-                    await session.commit()
-                    processed_count += len(price_updates)
-                    all_price_updates.extend(price_updates)  # Accumulate for alert check
-            
-            logger.info(f"Finished updating prices. Total processed: {processed_count}")
+                price_updates.append({
+                    "item_id": item.id,
+                    "torn_id": item.torn_id,  # For Torn Market URL
+                    "item_name": item.name, # Added for alerts
+                    "timestamp": now,
+                    "market_price": market_price,
+                    "bazaar_price": bazaar_price,
+                    "market_price_avg": market_price_avg,
+                    "bazaar_price_avg": bazaar_price_avg,
+                    "cheapest_bazaar_seller": cheapest_bazaar_seller,  # For Bazaar URL
+                    "best_listing_id": best_listing_id # For Deduplication
+                })
 
-            # 4. Check Alerts (using ALL accumulated updates)
-            await self.check_alerts(session, all_price_updates)
+                # Update Item cache
+                item.last_market_price = market_price
+                item.last_bazaar_price = bazaar_price
+                item.last_market_price_avg = market_price_avg
+                item.last_bazaar_price_avg = bazaar_price_avg
+                item.last_updated_at = now
+                
+                # Save orderbook snapshot (top 5 for each)
+                if data and data.get('listings'):
+                    import json
+                    snapshot = {
+                        "market": data['listings'].get('market', [])[:5],
+                        "bazaar": data['listings'].get('bazaar', [])[:5],
+                    }
+                    item.orderbook_snapshot = json.dumps(snapshot)
+            
+            if price_updates:
+                # Filter out keys not in PriceLog model
+                db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller', 'best_listing_id')} for u in price_updates]
+                stmt = insert(PriceLog).values(db_inserts)
+                await session.execute(stmt)
+                await session.commit()
+                processed_count += len(price_updates)
+                all_price_updates.extend(price_updates)
+        
+        return all_price_updates
 
     async def check_alerts(self, session, price_updates):
         """
@@ -266,6 +251,7 @@ class PriceService:
                 
             market_price = update.get('market_price') or 0
             bazaar_price = update.get('bazaar_price') or 0
+            best_listing_id = update.get('best_listing_id') # For deduplication
             
             # We check both prices against the target? 
             # Usually users want "Cheapest available price".
@@ -305,10 +291,44 @@ class PriceService:
                 # Passing names in price_updates is easier.
                 pass
                 
+                # Deduplication & Throttling Logic for Persistent Alerts
+                if alert.is_persistent:
+                    is_same_price = (alert.last_triggered_price == best_price)
+                    is_same_id = (str(alert.last_triggered_id) == str(best_listing_id)) if best_listing_id and alert.last_triggered_id else False
+                    
+                    # If ID is missing (e.g. old alerts), strictly rely on price
+                    if not alert.last_triggered_id and not best_listing_id:
+                         is_same_id = True # fallback
+                    
+                    has_changed = not (is_same_price and is_same_id)
+                    
+                    # Time Check (Throttle)
+                    now_utc = datetime.utcnow()
+                    time_since_last = (now_utc - alert.last_triggered_at) if alert.last_triggered_at else timedelta(hours=999)
+                    is_expired = time_since_last > timedelta(minutes=5)
+                    
+                    should_notify = False
+                    
+                    if has_changed:
+                         should_notify = True
+                         # logger.info(f"Alert Trigger: Change detected. Price: {alert.last_triggered_price}->{best_price}, ID: {alert.last_triggered_id}->{best_listing_id}")
+                    elif is_expired:
+                         should_notify = True
+                         # logger.info(f"Alert Trigger: Throttling expired ({time_since_last}). Sending reminder.")
+                    
+                    if not should_notify:
+                        continue
+
+                    # Update State
+                    alert.last_triggered_price = best_price
+                    alert.last_triggered_id = best_listing_id
+                    alert.last_triggered_at = now_utc
+                
                 # We will trigger the notification task
                 item_name = update.get('item_name', f"Item {alert.item_id}")
                 torn_id = update.get('torn_id', alert.item_id)  # Use torn_id for URL
                 bazaar_seller_id = update.get('cheapest_bazaar_seller')  # For Bazaar URL
+                best_listing_id = update.get('best_listing_id') # For deduplication
                 logger.info(f"Sending alert for {item_name}: torn_id={torn_id}, market_type={market_type}, bazaar_seller={bazaar_seller_id}")
                 await notification_service.send_discord_alert(
                     item_name=item_name,

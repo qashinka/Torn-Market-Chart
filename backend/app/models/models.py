@@ -64,6 +64,9 @@ class PriceAlert(Base):
     condition = Column(String(10), nullable=False) # "above", "below"
     is_active = Column(Boolean, default=True)
     is_persistent = Column(Boolean, default=False)  # False = one-time, True = recurring
+    last_triggered_price = Column(BigInteger, nullable=True)  # To deduplicate alerts
+    last_triggered_id = Column(String(255), nullable=True) # Listing ID or Seller ID to detect new listings at same price
+    last_triggered_at = Column(DateTime, nullable=True) # Timestamp of last trigger for throttling
 
     item = relationship("Item", back_populates="alerts")
 
