@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from typing import List
+from typing import List, Optional
+from datetime import datetime
 
 from app.db.database import get_db
 from app.models.models import Item
@@ -11,9 +12,30 @@ from app.api.deps import verify_admin
 router = APIRouter()
 
 @router.get("", response_model=List[ItemOut])
-async def read_items(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
-    # Only return tracked items for the main list
-    result = await db.execute(select(Item).where(Item.is_tracked == True).offset(skip).limit(limit))
+async def read_items(skip: int = 0, limit: int = 1000, all: bool = False, db: AsyncSession = Depends(get_db)):
+    # If all=True, return tracked AND untracked items that have recent trend data (active)
+    # Otherwise, return only tracked items.
+    query = select(Item)
+    
+    if not all:
+        query = query.where(Item.is_tracked == True)
+    else:
+        # If fetching all, we arguably want ANY item that has data, 
+        # but to prevent returning 30k empty items, we can filter for those with price data
+        # or just return everything? 
+        # Users want "Trend" data. So let's filter for items where last_market_trend IS NOT NULL
+        # OR is_tracked (to ensure my list doesn't disappear).
+        from sqlalchemy import or_
+        query = query.where(
+            or_(
+                Item.is_tracked == True,
+                Item.last_market_trend.isnot(None)
+            )
+        )
+
+    # Order by tracked first, then name? Or just name.
+    # Let's simple order by id or name
+    result = await db.execute(query.offset(skip).limit(limit))
     return result.scalars().all()
 
 @router.get("/torn", response_model=List[ItemOut])
@@ -65,28 +87,21 @@ async def update_item(item_id: int, item_in: ItemUpdate, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(item)
     return item
-@router.get("/{item_id}/history", response_model=List[dict])
-async def get_item_history(item_id: int, db: AsyncSession = Depends(get_db)):
-    from app.models.models import PriceLog
-    # Limit to last 24 hours or appropriate range by default
-    result = await db.execute(
-        select(PriceLog)
-        .where(PriceLog.item_id == item_id)
-        .order_by(PriceLog.timestamp.desc())
-        .limit(4320)
-    )
-    logs = result.scalars().all()
-    # Convert to simple dict list for frontend
-    return [
-        {
-            "timestamp": log.timestamp,
-            "market_price": log.market_price,
-            "bazaar_price": log.bazaar_price,
-            "market_price_avg": log.market_price_avg,
-            "bazaar_price_avg": log.bazaar_price_avg
-        }
-        for log in logs
-    ]
+@router.get("/{item_id}/history")
+async def get_item_history(
+    item_id: int,
+    days: int = 7,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    interval: str = "raw",
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Get price history for an item with optional aggregation.
+    Delegates to the aggregation logic in prices.py.
+    """
+    from app.api.endpoints.prices import get_price_history
+    return await get_price_history(item_id, days, start_date, end_date, interval, db)
 
 @router.delete("/{item_id}", status_code=204, dependencies=[Depends(verify_admin)])
 async def delete_item(item_id: int, db: AsyncSession = Depends(get_db)):

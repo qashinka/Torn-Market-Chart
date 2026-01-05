@@ -1,13 +1,13 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, Search } from 'lucide-react';
 
 import { PriceChart } from './PriceChart';
+import { MarketOverview } from './MarketOverview';
 import { AutocompleteInput } from './AutocompleteInput';
 import { OrderBookButton } from './OrderBookButton';
 import { AlertManager } from './AlertManager';
-import { getItems, getHistory, Item, PricePoint } from '@/lib/api';
-import { calculateMovingAverage } from '@/lib/stats';
+import { getItems, Item } from '@/lib/api';
 
 export function Dashboard() {
     const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
@@ -16,23 +16,13 @@ export function Dashboard() {
 
     const { data: items, isLoading } = useQuery<Item[]>({
         queryKey: ['items'],
-        queryFn: getItems
+        queryFn: () => getItems(true)
     });
 
-    const { data: history } = useQuery<PricePoint[]>({
-        queryKey: ['history', selectedItemId],
-        queryFn: () => getHistory(selectedItemId!),
-        enabled: !!selectedItemId
-    });
+    // History fetch removed to prevent double-loading. PriceChart handles its own data.
+    // const { data: history } = useQuery(...) 
 
-    const enrichedHistory = useMemo(() => {
-        if (!history) return undefined;
-        return calculateMovingAverage(history, 24);
-    }, [history]);
-
-    const latestPoint = enrichedHistory && enrichedHistory.length > 0
-        ? enrichedHistory[enrichedHistory.length - 1]
-        : null;
+    // Trend calculation removed as it depended on heavy history fetch.
 
     // Determine currently displayed item: check tracking list first, then temporary state
     const currentItem = items?.find(i => i.id === selectedItemId) || (selectedItemId === temporaryItem?.id ? temporaryItem : null);
@@ -47,17 +37,9 @@ export function Dashboard() {
     // Actually, for better UX on mobile, we might NOT want to auto-select.
     // But changing that logic might affect desktop. 
     // Let's stick to the conditional CSS approach first.
-    const hasAutoSelected = useRef(false);
 
-    useEffect(() => {
-        if (items && items.length > 0 && !selectedItemId && !temporaryItem && !hasAutoSelected.current) {
-            // Only auto-select on desktop (md breakpoint is usually 768px)
-            if (window.innerWidth >= 768) {
-                setSelectedItemId(items[0].id);
-                hasAutoSelected.current = true;
-            }
-        }
-    }, [items, selectedItemId, temporaryItem]);
+
+
 
     const handleTemporarySelect = (item: Item) => {
         setTemporaryItem(item);
@@ -68,38 +50,55 @@ export function Dashboard() {
         setSelectedItemId(null);
         setTemporaryItem(null);
     };
-
+    // Mobile selection state
     const isItemSelected = !!selectedItemId;
 
+    // Desktop sidebar collapse state
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+    // Filter sidebar list (only tracked items)
+    const sidebarItems = items?.filter(i => i.is_tracked) || [];
+
     return (
-        <div className="flex h-screen overflow-hidden bg-black flex-col md:flex-row">
-            {/* Sidebar List */}
-            {/* On mobile: Hide if item is selected. On desktop: Always show. */}
-            <div className={`${isItemSelected ? 'hidden md:flex' : 'flex'} w-full md:w-80 border-r border-zinc-800 flex-col bg-zinc-950`}>
-                <div className="p-4 border-b border-zinc-800">
-                    <h2 className="text-xl font-bold text-white mb-2">Market Overview</h2>
+        <div className="flex h-full relative">
+            {/* Desktop Collapsible Sidebar */}
+            <div
+                className={`
+                    transition-all duration-300 ease-in-out border-r border-zinc-800 bg-zinc-950 flex flex-col
+                    ${isSidebarOpen ? 'w-80 translate-x-0' : 'w-0 -translate-x-full border-r-0 overflow-hidden opacity-0'}
+                    ${isItemSelected ? 'hidden md:flex' : 'flex'} 
+                    md:relative absolute z-20 h-full
+                `}
+            >
+                <div className="p-4 border-b border-zinc-800 flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-white whitespace-nowrap overflow-hidden">Overview</h2>
+                    <button onClick={() => setIsSidebarOpen(false)} className="p-1 hover:bg-zinc-800 rounded text-zinc-400 hover:text-white">
+                        <ChevronLeft className="w-5 h-5" />
+                    </button>
+                </div>
+                <div className="p-4 py-2">
                     <AutocompleteInput onSelect={handleTemporarySelect} />
-                    <p className="text-xs text-gray-500 mt-2">Search to view temporarily</p>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-2 space-y-2">
                     {isLoading && <p className="p-4 text-gray-500">Loading items...</p>}
-                    {items?.length === 0 && (
+                    {sidebarItems.length === 0 && !isLoading && (
                         <div className="p-4 text-center text-gray-500">
                             <p>No items tracked.</p>
                             <p className="text-sm mt-2">Go to "Manage Items" to add some.</p>
                         </div>
                     )}
-                    {items?.map(item => (
+                    {sidebarItems.map(item => (
                         <div
                             key={item.id}
                             className={`p-3 rounded-lg cursor-pointer transition-all ${selectedItemId === item.id
                                 ? 'bg-zinc-800 border-l-4 border-green-500 shadow-lg'
                                 : 'hover:bg-zinc-900 border-l-4 border-transparent text-gray-400 hover:text-white'
-                                }`}
+                                } `}
                             onClick={() => {
                                 setSelectedItemId(item.id);
                                 setTemporaryItem(null); // Clear temp if switching to tracked
+                                // On mobile, we might want to auto-close? No, CSS handles it.
                             }}
                         >
                             <div className="flex justify-between items-center mb-1">
@@ -115,9 +114,20 @@ export function Dashboard() {
                 </div>
             </div>
 
-            {/* Main Chart Area */}
+            {/* Main Content Area */}
             {/* On mobile: Hide if NO item is selected. On desktop: Always show (or show empty state). */}
-            <div className={`${!isItemSelected ? 'hidden md:flex' : 'flex'} flex-1 flex-col min-w-0 bg-black p-4`}>
+            <div className={`flex-1 flex flex-col min-w-0 bg-black p-4 relative transition-all duration-300 ${!isItemSelected ? 'hidden md:flex' : 'flex'}`}>
+
+                {/* Expand sidebar button (Desktop only, when closed) */}
+                {!isSidebarOpen && (
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="absolute top-4 left-4 z-30 p-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white shadow-xl hover:bg-zinc-800 transition-colors hidden md:flex items-center gap-2"
+                    >
+                        <Search className="w-4 h-4" />
+                        <span className="text-sm font-medium">Find Item</span>
+                    </button>
+                )}
                 {selectedItemId && currentItem ? (
                     <div className="flex-1 flex flex-col bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
                         <div className="p-4 md:p-6 border-b border-zinc-800 flex flex-col md:flex-row justify-between items-start md:items-center bg-zinc-900 gap-4">
@@ -133,7 +143,7 @@ export function Dashboard() {
                                 <div>
                                     <h1 className="text-lg md:text-2xl font-bold text-white mb-1 flex items-center gap-2">
                                         {currentItem.name}
-                                        {!items?.find(i => i.id === currentItem.id) && <span className="text-[10px] md:text-xs bg-yellow-900 text-yellow-200 px-2 py-0.5 rounded">Temp</span>}
+                                        {!currentItem.is_tracked && <span className="text-[10px] md:text-xs bg-yellow-900 text-yellow-200 px-2 py-0.5 rounded">Temp</span>}
                                     </h1>
                                     <div className="flex items-center gap-3">
                                         <p className="text-xs md:text-sm text-gray-400">
@@ -161,9 +171,9 @@ export function Dashboard() {
                                         </span>
                                     </div>
                                     <div className="flex items-baseline justify-end gap-2 mt-1">
-                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Trend</span>
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Trend (24h)</span>
                                         <span className="text-xs md:text-sm font-mono text-fuchsia-400">
-                                            ${latestPoint?.market_price_ma?.toLocaleString() ?? '-'}
+                                            ${currentItem.last_market_trend?.toLocaleString() ?? '-'}
                                         </span>
                                     </div>
                                 </div>
@@ -182,9 +192,9 @@ export function Dashboard() {
                                         </span>
                                     </div>
                                     <div className="flex items-baseline justify-end gap-2 mt-1">
-                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Trend</span>
+                                        <span className="text-[10px] text-zinc-500 uppercase tracking-wide">Trend (24h)</span>
                                         <span className="text-xs md:text-sm font-mono text-orange-400">
-                                            ${latestPoint?.bazaar_price_ma?.toLocaleString() ?? '-'}
+                                            ${currentItem.last_bazaar_trend?.toLocaleString() ?? '-'}
                                         </span>
                                     </div>
                                 </div>
@@ -192,25 +202,22 @@ export function Dashboard() {
                         </div>
 
                         <div className="flex-1 p-2 md:p-4 min-h-0 relative">
-                            {history && history.length > 0 ? (
+                            {selectedItemId ? (
                                 <PriceChart
-                                    data={history}
+                                    itemId={selectedItemId}
                                 />
                             ) : (
                                 <div className="absolute inset-0 flex flex-col gap-2 items-center justify-center text-gray-500">
-                                    {history ? (
-                                        <p>No history data available yet.</p>
-                                    ) : (
-                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
-                                    )}
+                                    <p>No item selected.</p>
                                 </div>
                             )}
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 flex flex-col items-center justify-center text-zinc-600">
-                        <p className="text-xl">Select an item to view chart</p>
-                    </div>
+                    <MarketOverview
+                        items={items || []}
+                        onSelect={(item) => setSelectedItemId(item.id)}
+                    />
                 )}
             </div>
         </div>

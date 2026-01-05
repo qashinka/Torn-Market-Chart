@@ -21,6 +21,8 @@ class ItemOut(ItemBase):
     last_bazaar_price: Optional[int]
     last_market_price_avg: Optional[int]
     last_bazaar_price_avg: Optional[int]
+    last_market_trend: Optional[int]
+    last_bazaar_trend: Optional[int]
     last_updated_at: Optional[datetime]
 
     class Config:
@@ -33,6 +35,24 @@ class PriceLogOut(BaseModel):
     bazaar_price: Optional[int]
     market_price_avg: Optional[int]
     bazaar_price_avg: Optional[int]
+
+    class Config:
+        from_attributes = True
+
+class PriceCandle(BaseModel):
+    timestamp: datetime
+    # Market
+    market_open: Optional[int] = None
+    market_high: Optional[int] = None
+    market_low: Optional[int] = None
+    market_close: Optional[int] = None
+    market_avg: Optional[float] = None
+    # Bazaar
+    bazaar_open: Optional[int] = None
+    bazaar_high: Optional[int] = None
+    bazaar_low: Optional[int] = None
+    bazaar_close: Optional[int] = None
+    bazaar_avg: Optional[float] = None
 
     class Config:
         from_attributes = True

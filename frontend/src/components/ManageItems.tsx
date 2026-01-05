@@ -12,7 +12,7 @@ export function ManageItems() {
 
     const { data: items, isLoading } = useQuery<Item[]>({
         queryKey: ['items'],
-        queryFn: getItems
+        queryFn: () => getItems()
     });
 
     const createItemMutation = useMutation({

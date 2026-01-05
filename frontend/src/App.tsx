@@ -6,12 +6,23 @@ import { LayoutDashboard, Settings as SettingsIcon, Package } from 'lucide-react
 
 function App() {
   const [currentView, setCurrentView] = useState<'dashboard' | 'items' | 'settings'>('dashboard');
+  const [dashboardKey, setDashboardKey] = useState(0);
+
+  const handleHomeClick = () => {
+    setCurrentView('dashboard');
+    if (currentView === 'dashboard') {
+      // Force remount
+      setDashboardKey(prev => prev + 1);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-black text-white flex flex-col md:flex-row">
       {/* Sidebar - Desktop Only */}
-      <div className="hidden md:flex w-64 border-r border-zinc-800 p-4 space-y-4 flex-shrink-0 h-screen sticky top-0 flex-col">
-        <h1 className="text-xl font-bold px-4 mb-8 text-green-500">Torn Market</h1>
+      <div className="hidden md:flex w-64 border-r border-zinc-800 p-4 space-y-4 flex-shrink-0 h-screen sticky top-0 flex-col z-50 bg-black">
+        <button onClick={handleHomeClick} className="text-left px-4 mb-8 focus:outline-none hover:opacity-80 transition-opacity">
+          <h1 className="text-xl font-bold text-green-500">Torn Market</h1>
+        </button>
 
         <nav className="space-y-2 flex-1">
           <button
@@ -40,7 +51,7 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 bg-black pb-20 md:pb-0 min-h-screen">
-        {currentView === 'dashboard' ? <Dashboard /> : currentView === 'items' ? <ManageItems /> : <div className="p-4 md:p-8"><Settings /></div>}
+        {currentView === 'dashboard' ? <Dashboard key={dashboardKey} /> : currentView === 'items' ? <ManageItems /> : <div className="p-4 md:p-8"><Settings /></div>}
       </div>
 
       {/* Bottom Navigation - Mobile Only */}
