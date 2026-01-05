@@ -62,11 +62,13 @@ export interface Item {
     last_bazaar_price?: number;
     last_market_price_avg?: number;
     last_bazaar_price_avg?: number;
+    last_market_trend?: number;
+    last_bazaar_trend?: number;
     last_updated_at?: string;
 }
 
-export const getItems = async () => {
-    const response = await api.get<Item[]>('/items');
+export const getItems = async (itemsAll: boolean = false) => {
+    const response = await api.get<Item[]>('/items', { params: { all: itemsAll } });
     return response.data;
 };
 
@@ -97,13 +99,45 @@ export interface PricePoint {
     bazaar_price: number;
     market_price_avg?: number;
     bazaar_price_avg?: number;
+    // Compatibility for aggregation if used in raw mode? No, raw returns this.
 }
 
-export const getHistory = async (itemId: number) => {
-    const response = await api.get<PricePoint[]>(`/items/${itemId}/history`);
-    // Backend returns newest first (DESC), but charts usually expect oldest first (Left->Right)
-    // or we just want standard time flow Left(Old) -> Right(New).
-    return response.data.reverse();
+export interface PriceCandle {
+    timestamp: string;
+    // Market
+    market_open?: number;
+    market_high?: number;
+    market_low?: number;
+    market_close?: number;
+    market_avg?: number;
+    // Bazaar
+    bazaar_open?: number;
+    bazaar_high?: number;
+    bazaar_low?: number;
+    bazaar_close?: number;
+    bazaar_avg?: number;
+}
+
+export type PriceData = PricePoint | PriceCandle;
+
+export const getHistory = async (
+    itemId: number,
+    params?: {
+        days?: number;
+        interval?: string;
+        start_date?: string;
+        end_date?: string
+    }
+) => {
+    const response = await api.get<PriceData[]>(`/items/${itemId}/history`, { params });
+    // Backend returns ASC now? Original code said "Backend returns newest first (DESC)" but code was `order_by(PriceLog.timestamp.asc())`.
+    // Wait, let's check backend `prices.py`: `.order_by(PriceLog.timestamp.asc())`.
+    // So it returns Oldest -> Newest.
+    // Frontend `reverse()` was WRONG if it expected Old -> New for chart.
+    // Lightweight charts expects ASC (Old -> New).
+    // If original frontend was reversing, it means it thought backend was DESC. 
+    // Let's assume standard behavior: Backend returns ASC. Frontend passes as is.
+    return response.data;
 };
 
 // Order Book / Listings

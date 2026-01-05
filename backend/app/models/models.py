@@ -21,6 +21,8 @@ class Item(Base):
     last_bazaar_price = Column(BigInteger, nullable=True)
     last_market_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
     last_bazaar_price_avg = Column(BigInteger, nullable=True)  # Avg of top 5
+    last_market_trend = Column(BigInteger, nullable=True)      # 24h Moving Average
+    last_bazaar_trend = Column(BigInteger, nullable=True)      # 24h Moving Average
     last_updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     
     # Order book snapshot (Top 5 listings for each market, JSON format)

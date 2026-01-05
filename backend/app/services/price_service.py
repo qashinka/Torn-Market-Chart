@@ -19,6 +19,12 @@ class PriceService:
         # 1. Load Configuration
         from app.models.models import ApiKey
         from sqlalchemy import func
+        
+        # Constants
+        BACKOFF_HIGH_MINUTES = 60
+        BACKOFF_LOW_MINUTES = 30
+        FAILURE_THRESHOLD_LOW = 3
+        FAILURE_THRESHOLD_HIGH = 10
 
         # 1. Load Configuration & Active Keys
         base_limit = int(await config_service.get_config('api_rate_limit', '50')) # requests per minute per key
@@ -58,6 +64,7 @@ class PriceService:
                 # Fetch untracked items logic (Unchanged)
                 from sqlalchemy import or_, and_
                 
+                now_utc = datetime.utcnow()
                 limit_high = now_utc - timedelta(minutes=BACKOFF_HIGH_MINUTES)
                 limit_low = now_utc - timedelta(minutes=BACKOFF_LOW_MINUTES)
                 
@@ -96,11 +103,11 @@ class PriceService:
         Helper to fetch and save prices for a list of items.
         Returns a list of price_updates dictionaries.
         """
-        from app.services.torn_api import torn_api_service
-        from datetime import datetime
-        
         if not items:
             return []
+
+        from app.services.torn_api import torn_api_service
+        from sqlalchemy import func
 
         # Chunk Process
         chunk_size = 50 
@@ -208,6 +215,40 @@ class PriceService:
                 db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller', 'best_listing_id')} for u in price_updates]
                 stmt = insert(PriceLog).values(db_inserts)
                 await session.execute(stmt)
+                
+                # --- CALCULATION OF 24H TREND ---
+                # For each item, calculate the average price over the last 24 hours.
+                
+                limit_24h = datetime.utcnow() - timedelta(hours=24)
+                
+                for update in price_updates:
+                     # Calculate for this item
+                     i_id = update['item_id']
+                     
+                     # Wait, we want separate avgs. If market is 0, ignore for market avg.
+                     # Single query:
+                     stmt_trend = select(
+                         func.avg(func.nullif(PriceLog.market_price, 0)),
+                         func.avg(func.nullif(PriceLog.bazaar_price, 0))
+                     ).where(
+                         PriceLog.item_id == i_id,
+                         PriceLog.timestamp >= limit_24h
+                     )
+                     
+                     trend_res = await session.execute(stmt_trend)
+                     trend_row = trend_res.one_or_none()
+                     
+                     if trend_row:
+                         m_trend = int(trend_row[0]) if trend_row[0] else None
+                         b_trend = int(trend_row[1]) if trend_row[1] else None
+                         
+                         # Update Item instance in session (it's already tracked by session)
+                         # We need to find the item object in `chunk` list matching this ID
+                         item_obj = next((i for i in chunk if i.id == i_id), None)
+                         if item_obj:
+                             item_obj.last_market_trend = m_trend
+                             item_obj.last_bazaar_trend = b_trend
+
                 await session.commit()
                 processed_count += len(price_updates)
                 all_price_updates.extend(price_updates)
