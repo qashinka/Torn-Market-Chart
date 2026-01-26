@@ -1,11 +1,16 @@
 import logging
 import os
 import httpx
+from datetime import datetime, timedelta
 from app.services.config_service import config_service
 
 logger = logging.getLogger(__name__)
 
 class NotificationService:
+    def __init__(self):
+        self._bazaar_cooldowns = {}
+        self.COOLDOWN_DURATION = timedelta(minutes=30)
+
     async def get_webhook_url(self) -> str:
         # Priority: DB Config > Environment Variable
         url = await config_service.get_config('discord_webhook_url')
@@ -13,7 +18,20 @@ class NotificationService:
             url = os.getenv('DISCORD_WEBHOOK_URL')
         return url
 
-    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int, bazaar_seller_id: int = None):
+    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int, bazaar_seller_id: int = None, quantity: int = None):
+        # Bazaar Cooldown Check
+        if bazaar_seller_id and market_type == "Bazaar":
+            now = datetime.utcnow()
+            key = (bazaar_seller_id, item_id)
+
+            if key in self._bazaar_cooldowns:
+                last_sent = self._bazaar_cooldowns[key]
+                if now - last_sent < self.COOLDOWN_DURATION:
+                    logger.info(f"Skipping alert for {item_name} from seller {bazaar_seller_id} (Cooldown active)")
+                    return
+
+            self._bazaar_cooldowns[key] = now
+
         url = await self.get_webhook_url()
         if not url:
             logger.warning("Discord Webhook URL not configured. Skipping alert.")
@@ -27,7 +45,8 @@ class NotificationService:
         # Let's use generic Orange for now, or Green if "below" (Buy) and Red if "above".
         color = 0x00FF00 if condition == 'below' else 0xFF0000
         
-        description = f"**{item_name}** is now **{formatted_price}** in the **{market_type}**!\n" \
+        quantity_str = f" x {quantity}" if quantity else ""
+        description = f"**{formatted_price}{quantity_str}** in the **{market_type}**\n" \
                       f"Target: {condition} {formatted_target}"
 
         # Generate URL based on market type
@@ -84,5 +103,4 @@ class NotificationService:
         except Exception as e:
             logger.error(f"Failed to send system alert: {e}")
 
-from datetime import datetime
 notification_service = NotificationService()
