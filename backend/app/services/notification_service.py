@@ -18,9 +18,9 @@ class NotificationService:
             url = os.getenv('DISCORD_WEBHOOK_URL')
         return url
 
-    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int, bazaar_seller_id: int = None):
+    async def send_discord_alert(self, item_name: str, item_id: int, price: int, market_type: str, condition: str, target_price: int, bazaar_seller_id: int = None, quantity: int = None):
         # Bazaar Cooldown Check
-        if bazaar_seller_id:
+        if bazaar_seller_id and market_type == "Bazaar":
             now = datetime.utcnow()
             key = (bazaar_seller_id, item_id)
 
@@ -45,7 +45,8 @@ class NotificationService:
         # Let's use generic Orange for now, or Green if "below" (Buy) and Red if "above".
         color = 0x00FF00 if condition == 'below' else 0xFF0000
         
-        description = f"**{item_name}** is now **{formatted_price}** in the **{market_type}**!\n" \
+        quantity_str = f" x {quantity}" if quantity else ""
+        description = f"**{formatted_price}{quantity_str}** in the **{market_type}**\n" \
                       f"Target: {condition} {formatted_target}"
 
         # Generate URL based on market type

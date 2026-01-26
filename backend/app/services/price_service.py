@@ -159,7 +159,8 @@ class PriceService:
                 # Get best listing ID for deduplication
                 # If Market/Bazaar: Use Listing ID (Market) or Seller ID (Bazaar)
                 best_listing_id = None
-                
+                best_quantity = 0
+
                 # Check IDs based on what is cheapest
                 if market_price > 0 and (bazaar_price == 0 or market_price < bazaar_price):
                     # Market is cheapest
@@ -167,12 +168,14 @@ class PriceService:
                         market_list = data['listings']['market']
                         if market_list and len(market_list) > 0:
                             best_listing_id = str(market_list[0].get('id'))
+                            best_quantity = market_list[0].get('quantity', 0)
                 elif bazaar_price > 0:
                     # Bazaar is cheapest (or equal)
                     if data and data.get('listings') and data['listings'].get('bazaar'):
                         bazaar_list = data['listings']['bazaar']
                         if bazaar_list and len(bazaar_list) > 0:
                             best_listing_id = str(bazaar_list[0].get('id'))
+                            best_quantity = bazaar_list[0].get('quantity', 0)
 
                 # Get cheapest bazaar seller ID for notification URL (This is same as best_listing_id if Bazaar is cheapest)
                 cheapest_bazaar_seller = None
@@ -191,7 +194,8 @@ class PriceService:
                     "market_price_avg": market_price_avg,
                     "bazaar_price_avg": bazaar_price_avg,
                     "cheapest_bazaar_seller": cheapest_bazaar_seller,  # For Bazaar URL
-                    "best_listing_id": best_listing_id # For Deduplication
+                    "best_listing_id": best_listing_id, # For Deduplication
+                    "quantity": best_quantity
                 })
 
                 # Update Item cache
@@ -212,7 +216,7 @@ class PriceService:
             
             if price_updates:
                 # Filter out keys not in PriceLog model
-                db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller', 'best_listing_id')} for u in price_updates]
+                db_inserts = [{k: v for k, v in u.items() if k not in ('item_name', 'torn_id', 'cheapest_bazaar_seller', 'best_listing_id', 'quantity')} for u in price_updates]
                 stmt = insert(PriceLog).values(db_inserts)
                 await session.execute(stmt)
                 
@@ -370,7 +374,8 @@ class PriceService:
                 torn_id = update.get('torn_id', alert.item_id)  # Use torn_id for URL
                 bazaar_seller_id = update.get('cheapest_bazaar_seller')  # For Bazaar URL
                 best_listing_id = update.get('best_listing_id') # For deduplication
-                logger.info(f"Sending alert for {item_name}: torn_id={torn_id}, market_type={market_type}, bazaar_seller={bazaar_seller_id}")
+                quantity = update.get('quantity')
+                logger.info(f"Sending alert for {item_name}: torn_id={torn_id}, market_type={market_type}, bazaar_seller={bazaar_seller_id}, quantity={quantity}")
                 await notification_service.send_discord_alert(
                     item_name=item_name,
                     item_id=torn_id,  # This is now torn_id for correct URL
@@ -378,7 +383,8 @@ class PriceService:
                     market_type=market_type,
                     condition=alert.condition,
                     target_price=alert.target_price,
-                    bazaar_seller_id=bazaar_seller_id
+                    bazaar_seller_id=bazaar_seller_id,
+                    quantity=quantity
                 )
                 
                 # Deactivate alert only if it's a one-time alert
