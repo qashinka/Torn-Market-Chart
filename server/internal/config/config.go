@@ -44,7 +44,11 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
+	// Try loading from current directory first, then parent.
+	// We ignore errors here as we might be running in an environment
+	// where env vars are set directly (e.g. docker/k8s).
 	_ = godotenv.Load()
+	_ = godotenv.Load("../.env")
 
 	cfg := &Config{
 		Port:              getEnv("PORT", "8080"),

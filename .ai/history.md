@@ -2,6 +2,21 @@
 
 ## 時系列ログ
 
+### 2026-02-09
+*   **機能改善: アイテム検索 (Conversation: Improving Item Search)**
+    *   *バックエンド:* `/api/v1/items/search` エンドポイントの実装。
+    *   *フロントエンド:* `CommandPalette` コンポーネントの改修、動的検索の統合。
+*   **機能改善: トレーダーリスト表示 (Conversation: Refining Trader Listings)**
+    *   *UI:* トレーダー価格表示の整理、冗長な情報の削除。
+    *   *機能:* Torn Exchange価格との統合、裁定取引（Arbitrage）分析機能の追加。
+
+### 2026-02-07
+*   **ドキュメント: プロジェクト仕様書の刷新 (Conversation: Rewriting Project Documentation)**
+    *   Go/Next.jsアーキテクチャへの移行に伴い、`README.md` および `README_JP.md` を全面的に書き換え。
+    *   `current_specifications.md` を策定し、Single Source of Truth とした。
+*   **検討: 価格アラート重複排除 (Conversation: Price Alert Deduplication Strategy)**
+    *   アラートの重複排除ロジックの再設計を検討。`AlertHistory` テーブルの導入などを議論。
+
 ### 2025-12-27
 *   **機能: 価格アラート実装:**
     *   *バックエンド:* `NotificationService` (Discord Webhook) を実装。`PriceService.check_alerts` でアラート条件を評価し通知を送信。

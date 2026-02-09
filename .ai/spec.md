@@ -1,66 +1,72 @@
-# プロジェクト仕様書: Torn Market Chart
+# 現行システム仕様書 (Torn Market Chart)
 
-## 1. 概要
-**Torn Market Chart** は、MMORPG「Torn City」のアイテム価格を追跡・可視化するためのWebツールです。TradingViewスタイルのチャート、リアルタイムのオーダーブック（マーケットとバザールの最安トップ5）、および信頼性向上のためのマルチAPIキー管理機能を提供します。
+## 1. システム概要
+Torn Cityのアイテム価格を追跡・可視化し、設定した条件に基づいてDiscord通知を行うツール。
+公式API（Item Market）と外部サービス（weav3r.dev, Bazaar）の双方からデータを取得し、TradingViewスタイルのチャートで表示する。
+バックエンドにGo、フロントエンドにNext.jsを採用し、高パフォーマンスとリアルタイム性を重視した設計となっている。
 
-## 2. 技術スタック
+## 2. アーキテクチャ構成
 
-### Backend
-*   **言語:** Python 3.10+
-*   **フレームワーク:** FastAPI
-*   **データベース:** MySQL 8.0 (`asyncmy` + SQLAlchemy による非同期アクセス)
-*   **キャッシュ/キュー:** Redis (レート制限およびキーローテーション用)
-*   **スケジューラ:** APScheduler (バックグラウンドでの価格取得)
-*   **外部リクエスト:** `curl_cffi` (Cloudflare回避のためのバザールスクレイピング)
+### バックエンド
+- **言語**: Go (Golang) 1.22+
+- **WAF**: 標準ライブラリ (`net/http`) + `Chi` (Routing)
+- **データベース接続**: `pgx/v5` Pool
+- **並行処理**: Goroutines / Channels / `errgroup`
+- **リアルタイム通信**: `Gorilla WebSocket` (Official API接続)
 
-### Frontend
-*   **フレームワーク:** React 18 (Vite)
-*   **スタイリング:** TailwindCSS
-*   **状態管理/クエリ:** TanStack Query
-*   **チャート:** lightweight-charts (TradingViewライブラリ)
-*   **HTTPクライアント:** Axios
+### フロントエンド
+- **フレームワーク**: Next.js 14 (App Router)
+- **UIライブラリ**: ShadcnUI, TailwindCSS
+- **チャート**: `lightweight-charts`
+- **データ取得**: SWR / server actions
 
-### Infrastructure
-*   **コンテナ化:** Docker & Docker Compose
-*   **プロファイル:**
-    *   `internal`: MySQLを統合したコンパクトなローカルセットアップ。
-    *   `external`: Tailscaleサイドカーを経由してリモートMySQLに接続。
-*   **管理:** DB確認用のPHPMyAdminを同梱。
+### インフラ・データ
+- **データベース**: PostgreSQL 16 + TimescaleDB (時系列データ最適化)
+- **キャッシュ/KVS**: Redis (レート制限、APIキー管理)
+- **デプロイ**: Docker Compose (Profile: internal/external)
 
-## 3. データアーキテクチャ
+## 3. データモデル (Database Schema)
 
-### コアモデル (`backend/app/models/models.py`)
+### `items` (アイテム管理)
+- **基本情報**: `id` (Torn ID), `name`, `description`, `type`, `circulation`, `market_value`
+- **管理フラグ**: `is_watched` (監視対象), `last_updated_at`
+- **最新キャッシュ**: `last_market_price`, `last_bazaar_price`
 
-#### `Item`
-*   **目的:** 追跡対象アイテムのレジストリ。
-*   **主要フィールド:** `torn_id`, `name`, `is_tracked`, `last_market_price`, `last_bazaar_price`.
-*   **キャッシング:** `orderbook_snapshot` (JSON) に最新のトップ5出品情報を保存。
+### `market_prices` / `bazaar_prices` (Hypertable)
+- **時系列データ**: `time`, `item_id`, `price`, `quantity`, `listing_id` (Market) / `seller_id` (Bazaar)
+- **TimescaleDB機能**: 自動パーティショニング、圧縮、連続集計（予定）
 
-#### `PriceLog`
-*   **目的:** 過去の価格データポイント。
-*   **主要フィールド:** `item_id`, `timestamp`, `market_price`, `bazaar_price`, 平均値。
-*   **インデックス:** `(item_id, timestamp)` の複合インデックス。
+### `alerts` (通知設定)
+- **条件**: `item_id`, `target_price`, `condition` (above/below)
+- **設定**: `is_active`, `is_persistent` (繰り返し通知)
+- **状態**: `last_triggered_at`
 
-#### `ApiKey`
-*   **目的:** Torn APIキーの管理。
-*   **主要フィールド:** `key`, `is_active`, `last_used_at`.
-*   **ロジック:** 負荷分散のためのラウンドロビンローテーション。
+### `api_keys` (APIキー管理)
+- **情報**: `key`, `comment`, `is_active`, `error_count`
 
-#### `PriceAlert`
-*   **目的:** 価格閾値に対するユーザー定義アラート。Discord Webhook経由で通知。
-*   **主要フィールド:** `item_id`, `target_price`, `condition` (above/below), `is_active`, `is_persistent`.
-*   **ロジック:** アラート条件に一致時に通知を送信。`is_persistent=false`（デフォルト）の場合は発火後に無効化（ワンタイムアラート）。`is_persistent=true`の場合は繰り返し通知可能。
+## 4. コアロジック・ワーカー仕様 (`cmd/workers`)
 
-## 4. 主要機能
-1.  **高度なチャート機能:** 最安値、平均値、24時間移動平均トレンドを可視化。
-2.  **オーダーブック:** 公式アイテムマーケットとユーザーバザールの両方から、最安5件の出品をライブ表示。
-3.  **価格アラート:** Discord Webhookによる価格通知。ターゲット価格に対して「以上」「以下」の条件を設定可能。ワンタイムまたは繰り返しアラートを選択可能。
-4.  **スマート取得:**
-    *   並列APIリクエスト (セマフォ制限: 5)。
-    *   失敗したアイテムに対するバックオフ戦略。
-    *   DBにキーがない場合の環境変数キーへのフォールバック。
-5.  **デプロイモード:** Docker Composeプロファイルを使用して、ローカルDBとリモートDB構成をシームレスに切り替え。
+### 4.1. BazaarPoller (監視アイテム更新)
+- **役割**: 監視リスト (`is_watched=true`) にあるアイテムの価格を `weav3r.dev` から取得。
+- **頻度**: デフォルト **10秒ごと**。
+- **並行数**: `MAX_CONCURRENT_FETCHES` (デフォルト5) で制限。
+- **レート制限**: Redisを使用した `1800 req/min` 制限 (Weav3r API用)。
 
-## 5. セキュリティ & ネットワーク
-*   **Tailscale統合:** ポートを公開せずにリモートデータベースにアクセスするためのセキュアなプライベートネットワーク。
-*   **プロキシヘッダー:** 正しいIP解決のためにプロキシヘッダーを信頼するようにFastAPIを構成。
+### 4.2. BackgroundCrawler (全アイテム巡回)
+- **役割**: 全アイテムの価格履歴を埋めるため、監視対象外のアイテムも含めて巡回。
+- **ロジック**: `last_updated_at` が最も古いアイテムを選択して取得 (Torn Official API v2)。
+- **頻度**: デフォルト **500msごと** (120 req/min)。
+
+### 4.3. GlobalSync (カタログ同期)
+- **役割**: Tornの全アイテム定義（ID, 名前）を取得し、dbを更新。
+- **頻度**: **24時間に1回**。
+
+### 4.4. TornWebSocketService (リアルタイム通知)
+- **役割**: TornのWebSocketサーバー (`wss://ws-centrifugo.torn.com`) に接続し、トレード情報をリアルタイム受信。
+- **機能**:
+  - `item-market` チャンネルを購読。
+  - 受信した価格がアラート条件を満たした場合、即座にDiscord通知を送信。
+
+## 5. その他機能
+- **APIキーローテーション**: `Worker` が使用するAPIキーをラウンドロビンで切り替え。
+- **Discord通知**: Webhookを使用し、価格変動時にEmbedメッセージを送信。

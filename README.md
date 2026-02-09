@@ -110,8 +110,8 @@ graph TD
 2. **Configure Environment**
    Copy `.env.example` to `.env` and fill in your details.
    ```bash
-   cp server/.env.example server/.env
-   # Edit server/.env with your DB credentials & API Keys
+   cp .env.example .env
+   # Edit .env with your DB credentials & API Keys
    ```
 
 3. **Start Services**

@@ -5,16 +5,20 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/akagifreeez/torn-market-chart/internal/config"
 	"github.com/akagifreeez/torn-market-chart/pkg/database"
 )
 
 func main() {
-	databaseURL := os.Getenv("DATABASE_URL")
-	if databaseURL == "" {
-		databaseURL = "postgres://postgres:password@localhost:5432/torn_market"
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		os.Exit(1)
 	}
 
-	db, err := database.NewDB(databaseURL)
+	// Connect to database
+	db, err := database.New(context.Background(), cfg.DatabaseURL)
 	if err != nil {
 		fmt.Printf("Failed to connect: %v\n", err)
 		os.Exit(1)

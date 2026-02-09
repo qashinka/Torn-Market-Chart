@@ -110,8 +110,8 @@ graph TD
 2. **環境変数の設定**
    `.env.example` をコピーして `.env` を作成し、中身を編集します。
    ```bash
-   cp server/.env.example server/.env
-   # server/.env を開き、DBパスワードやAPIキーを設定してください
+   cp .env.example .env
+   # .env を開き、DBパスワードやAPIキーを設定してください
    ```
 
 3. **サービスの起動**
