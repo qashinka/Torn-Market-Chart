@@ -1,5 +1,0 @@
-
-> torn-market-tracker-frontend@0.0.0 build
-> tsc && vite build
-
-src/components/PriceChart.tsx(1,1): error TS6133: 'React' is declared but its value is never read.

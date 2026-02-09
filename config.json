@@ -1,0 +1,6 @@
+{
+  "jules_api_key": "AQ.Ab8RN6JOmsHmTVPes2-xjDNU5cWpXM_U1Yn8lPFgyR93RnvSqw",
+  "polling_interval_seconds": 30,
+  "require_plan_approval": true,
+  "history_path": ".jules_history.json"
+}

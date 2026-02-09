@@ -5,36 +5,39 @@
 - **Type Safety**: 型定義を詳細に行い、`any` の使用は極力避ける。
 - **Consistency**: 既存のコードスタイルと言語標準に従う。
 
-## Frontend (React + TypeScript + Tailwind)
+## Frontend (Next.js + TypeScript + Tailwind)
 - **Component Style**:
-  - 関数コンポーネント (Function Components) と Hooks を使用する。
-  - 1ファイル1コンポーネントを基本とする。
-  - ファイル名は `PascalCase.tsx`。
+  - Use Functional Components and Hooks.
+  - One component per file (`PascalCase.tsx`).
+  - Use Server Components by default; add `"use client"` only when interactivity is needed.
 - **State Management**:
-  - ローカルステートには `useState`。
-  - サーバー状態には `TanStack Query` を使用し、`useEffect` でのデータフェッチは避ける。
-  - グローバルステートが必要な場合は `Zustand` を検討する。
+  - Use URL search params for bookmarkable state where possible.
+  - Use `React Context` or `Zustand` for global client state.
+  - Use `SWR` or `React Query` for data fetching.
 - **Styling**:
-  - `TailwindCSS` のユーティリティクラスを使用する。
-  - 複雑なスタイル条件には `clsx` や `tailwind-merge` を活用する。
+  - Use `TailwindCSS` utility classes.
+  - Use `clsx` and `tailwind-merge` for conditional class names.
+  - Use `ShadcnUI` components for consistency.
 - **Linting**:
-  - `eslint` のルールに従う。
+  - Follow `eslint` and `prettier` rules.
 
-## Backend (FastAPI + Python)
+## Backend (Go)
 - **Code Style**:
-  - `Ruff` を使用してフォーマットとLintを行う。
-  - PEP 8 に準拠する。
-- **Async/Await**:
-  - I/O処理（DBアクセス、HTTPリクエスト）は必ず `async/await` で非同期化する。
-- **Type Hinting**:
-  - すべての関数引数と戻り値に型ヒントを付ける。
-  - Pydantic モデルを使用してリクエスト/レスポンスのバリデーションを行う。
+  - Run `go fmt` and `go vet` before committing.
+  - Follow standard Go conventions (Effective Go).
+- **Error Handling**:
+  - Return errors explicitly; avoid panics.
+  - Wrap errors with context: `fmt.Errorf("failed to ...: %w", err)`.
+- **Concurrency**:
+  - Use `Goroutines` and `Channels` for concurrent tasks.
+  - Always use `context.Context` for cancellation and timeout.
 - **Database**:
-  - SQLAlchemy の ORM モデルを使用する。
-  - 生SQLは避け、クエリビルダを使用する。
+  - Use `pgx` for PostgreSQL interactions.
+  - Use `sqlc` or raw SQL with strict typing for complex queries if needed.
+  - Use `TimescaleDB` features for time-series data.
 
 ## Documentation
 - **Comments**:
-  - 複雑なロジックには "なぜそうしたか" を説明するコメントを残す。
-- **Docstrings**:
-  - 公開関数やAPIエンドポイントには目的と引数/戻り値を説明する docstrings を記述する。
+  - Explain "WHY", not "WHAT".
+- **Go Docs**:
+  - exported functions and types must have a comment starting with their name.

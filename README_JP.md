@@ -1,173 +1,172 @@
-# Torn Market Chart
+# Torn Market Chart 📈
 
-Torn City マーケットトラッカー & 可視化ツール。TradingView スタイルのチャートとリアルタイムのオーダーブック（板情報）機能を備えています。
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Go](https://img.shields.io/badge/backend-Go_1.22+-00ADD8.svg)
+![Next.js](https://img.shields.io/badge/frontend-Next.js_14-black.svg)
+![TimescaleDB](https://img.shields.io/badge/database-TimescaleDB-orange.svg)
 
-## 機能
+**Torn City** プレイヤーのための、高性能かつリアルタイムな市場追跡・可視化ツールです。  
+**Go** と **Next.js** で構築されており、数百個のアイテムの高速監視と **TradingViewライクなチャート** 表示を実現します。
 
-### 📊 高度なチャート機能
-- **TradingView スタイルのチャート**: `lightweight-charts` を使用したエリアチャートとラインチャート
-- **価格の可視化**: 最安値、平均値（上位5件）、24時間移動平均トレンドを表示
-- **インタラクティブな凡例**: すべての価格指標を表示するリアルタイムのクロスヘア（十字カーソル）ツールチップ
-- **自動スケーリング**: アイテム切り替え時にチャートのスケールを自動調整
-- **データ品質**: 無効なデータ（ゼロやnull値）を除外し、クリーンな可視化を実現
+---
 
-### 📈 オーダーブック（板情報）統合
-- **リアルタイム上位5件リスト**: アイテムマーケットとバザールの両方から、最安値の上位5件を表示
-- **DBキャッシュ**: データベースのキャッシュから即座に表示（バックグラウンドワーカーが毎分更新）
-- **ダイレクトリンク**: リストをクリックするだけで、アイテムマーケットや出品者のバザールへ直接移動
-- **デュアルソース**: Torn公式API（マーケット）と weav3r.dev（バザール）からデータを取得
+## ✨ 主な機能
 
-### 🔑 複数APIキー管理
-- **キーローテーション**: 設定されたAPIキーをラウンドロビン方式で順次使用
-- **動的レート制限**: アクティブなキーの数に基づいてリクエスト数を自動的にスケーリング
-- **キーごとの追跡**: 各キーの最終使用時間とステータスを監視
-- **フォールバックサポート**: DBにキーが設定されていない場合、環境変数をフォールバックとして使用
+### 🚀 高速データ収集・監視
+- **リアルタイム WebSocket**: 公式サーバー (`wss://ws-centrifugo.torn.com`) に直結し、トレード発生と同時に更新を検知します（サブ秒レイテンシ）。
+- **ハイブリッド・ポーリング**:
+  - **Bazaar Poller**: 監視リストのアイテムを **10秒ごと** に `weav3r.dev` API経由でチェックします。
+  - **Background Crawler**: 監視外の全アイテム（1,200個以上）をバックグラウンドで **0.5秒間隔** で巡回し、市場全体のデータを蓄積します。
+- **高並行処理**: Go言語による並列処理で、大量のリクエストを効率的にさばきます。
 
-### ⚙️ スマートな価格更新
-- **並行取得**: セマフォ制御による並行APIリクエスト（制限: 5同時リクエスト）
-- **エラー耐性**: 取得失敗が他のアイテムをブロックすることはなく、タイムスタンプ付きで記録されます
-- **バックオフ戦略**: 継続的に失敗するアイテムの取得頻度を低減
-- **リストのスナップショット**: 上位5件のマーケット/バザールリストをDBに保存し、即時アクセスを実現
+### 📊 高度な可視化 (Visualization)
+- **TradingViewスタイル・チャート**: `lightweight-charts` を採用。エリアチャート、ラインチャート、移動平均線を表示可能。
+- **リアルタイム板情報 (Order Book)**: **アイテムマーケット** と **バザール** の最安値トップ5を横並びでリアルタイム表示します。
+- **クロスヘア・ツール**: チャート上のカーソル位置に合わせて、Market価格 / Bazaar価格 / 移動平均線 などの詳細データを瞬時に表示。
 
-## セットアップ
+### 🔔 スマート通知機能
+- **Discord通知**: 設定した条件（価格下落など）を満たすと、リッチなEmbedメッセージをWebhook送信します。
+- **高度なトリガー設定**:
+  - 「価格が Xドル 以下になったら」 / 「Yドル 以上になったら」
+  - **重複排除**: 同じ価格での連続通知を防ぐインテリジェントなフィルターを搭載。
+  - **クールダウン**: 一度通知した後、一定時間は通知を抑制する設定が可能。
 
-1. `.env.example` を `.env` にコピーして設定します:
-   ```env
-   DB_ROOT_PASSWORD=your_root_password
-   DB_NAME=torn_market
-   DB_USER=torn_market
-   DB_PASSWORD=your_db_password
-   # 外部データベースの Tailscale 上の IPアドレス（モードBで必須）
-   REMOTE_DB_HOST=100.90.10.0
-   DB_PORT=3306
+### 🛡️ 信頼性とスケーラビリティ
+- **レート制限**: Redisを使用したスライディングウィンドウ方式で、API制限（例: 100回/分）を厳密に遵守します。
+- **APIキーローテーション**: 複数のAPIキーを登録することで、リクエスト容量を自動的にスケールアップします。
+- **TimescaleDB**: PostgreSQLの時系列拡張を使用し、数百万件の価格データを効率的に格納・圧縮します。
 
-   # 必須: Tailscale Auth Key (Reusable 推奨) - モードBで必須
-   TS_AUTHKEY=tskey-auth-xxxxx
-   
-   ADMIN_PASSWORD=your_admin_password
-   TORN_API_KEY=optional_fallback_key
-   
-   # オプション: デフォルトのプロファイルを指定 (internal または external)
-   # COMPOSE_PROFILES=internal
+---
+
+## 🏗️ アーキテクチャ
+
+```mermaid
+graph TD
+    User[ユーザー / ブラウザ] -->|Next.js App| Web[Web フロントエンド]
+    Web -->|HTTP JSON| API[Go API サーバー]
+    
+    subgraph Backend [Go + インフラ]
+        API
+        Worker1[Bazaar Poller]
+        Worker2[Background Crawler]
+        Worker3[Global Sync]
+        WS[Torn WebSocket Service]
+    end
+    
+    subgraph Data [データストア]
+        DB[(TimescaleDB)]
+        Redis[(Redis キャッシュ)]
+    end
+    
+    subgraph External [外部 API]
+        TornAPI[Torn 公式 API]
+        Weav3r[Weav3r.dev API]
+        TornWS[Torn WebSocket]
+        Discord[Discord Webhook]
+    end
+
+    API --> DB
+    API --> Redis
+    
+    Worker1 -->|ポーリング 10秒| Weav3r
+    Worker1 --> DB
+    Worker1 --> Redis
+    
+    Worker2 -->|巡回 0.5秒| TornAPI
+    Worker2 --> DB
+    
+    WS -->|リアルタイム受信| TornWS
+    WS -->|通知送信| Discord
+```
+
+---
+
+## 🛠️ 技術スタック
+
+| カテゴリ     | 技術            | 説明                                                      |
+| :----------- | :-------------- | :-------------------------------------------------------- |
+| **Backend**  | **Go (Golang)** | メインサーバーロジック, ワーカー, Chi Router, pgx driver. |
+| **Frontend** | **Next.js 14**  | Reactフレームワーク (App Router), ShadcnUI, TailwindCSS.  |
+| **Database** | **TimescaleDB** | PostgreSQLベースの時系列データベース.                     |
+| **Cache**    | **Redis**       | レート制限, APIキー状態管理, ホットキャッシュ.            |
+| **Infra**    | **Docker**      | Docker Composeによる完全コンテナ化.                       |
+
+---
+
+## 🚀 導入方法 (Getting Started)
+
+### 必要要件
+- **Docker** および **Docker Compose**
+- **Torn API Key** (Public Keyで可)
+
+### インストール (Docker推奨)
+
+1. **リポジトリのクローン**
+   ```bash
+   git clone https://github.com/your-repo/torn-market-chart.git
+   cd torn-market-chart
    ```
 
+2. **環境変数の設定**
+   `.env.example` をコピーして `.env` を作成し、中身を編集します。
+   ```bash
+   cp server/.env.example server/.env
+   # server/.env を開き、DBパスワードやAPIキーを設定してください
+   ```
 
+3. **サービスの起動**
+   ```bash
+   # モード A: 内部データベースを使用 (簡単・推奨)
+   docker-compose --profile internal up -d --build
+   ```
+   
+4. **ダッシュボードへのアクセス**
+   ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。
 
+---
 
-2. アプリケーションを起動します:
+## 🔧 設定項目 (.env)
 
-    ### モード A: 内部データベース（デフォルト）
-    ローカルテストや自己完結型のデプロイに最適です。
-    ```bash
-    docker-compose --profile internal up -d --build
-    ```
+| 変数名                      | 説明                     | デフォルト値             |
+| :-------------------------- | :----------------------- | :----------------------- |
+| `DB_DSN`                    | PostgreSQL 接続文字列    | `postgres://...`         |
+| `REDIS_URL`                 | Redis 接続文字列         | `redis://localhost:6379` |
+| `TORN_API_KEY`              | フォールバック用 APIキー | `""`                     |
+| `DISCORD_WEBHOOK_URL`       | 通知用 Webhook URL       | `""`                     |
+| `BAZAAR_RATE_LIMIT`         | Weav3r API 制限 (回/分)  | `1800`                   |
+| `BACKGROUND_CRAWL_INTERVAL` | バックグラウンド巡回間隔 | `500ms`                  |
 
-    ### モード B: Tailscale + 外部データベース
-    Tailscale Proxyコンテナを経由して外部データベースに接続します。
-    `.env` で `REMOTE_DB_HOST` と `TS_AUTHKEY` が設定されていることを確認してください。
-    ```bash
-    docker-compose --profile external up -d --build
-    ```
+---
 
-3. ダッシュボードにアクセスします: `http://localhost:3000`
+## 💻 ローカル開発 (Dockerなし)
 
-4. APIキーの設定:
-   - **Settings**（設定）ページに移動します
-   - 1つ以上の Torn APIキーを追加します
-   - 価格取得時にキーが自動的にローテーションされます
-
-5. アイテムの追跡:
-   - **Manage Items**（アイテム管理）に移動します
-   - Tornのカタログからアイテムを検索します
-   - **Track**（追跡）をクリックしてダッシュボードに追加します
-
-## 技術スタック
-
-### バックエンド
-- **FastAPI**: 非同期サポートを備えたモダンなPython Webフレームワーク
-- **SQLAlchemy**: 非同期MySQL/MariaDBサポート (`asyncmy`) を備えたORM
-- **APScheduler**: 定期的な価格更新のためのバックグラウンドジョブスケジューリング
-- **Redis**: レート制限とAPIキーローテーション管理
-- **curl_cffi**: Cloudflareを回避してバザール情報を取得するためのHTTPクライアント
-
-### フロントエンド
-- **React 18**: フックを備えたモダンなUIライブラリ
-- **Vite**: 高速な開発・ビルドツール
-- **lightweight-charts**: TradingView品質のチャートライブラリ
-- **TanStack Query**: データ取得とキャッシング
-- **Axios**: API通信用HTTPクライアント
-- **TailwindCSS**: ユーティリティファーストなCSSフレームワーク
-
-### データベース
-- **MySQL 8.0**: アイテム、価格、メタデータのための主要データストア
-- **Redis**: レート制限とキーローテーションのためのインメモリキャッシュ
-
-### インフラストラクチャ
-- **Docker & Docker Compose**: コンテナ化されたデプロイ環境
-- **Nginx**: フロントエンド静的ファイルのリバースプロキシ（本番環境用）
-- **PHPMyAdmin**: データベース管理インターフェース (`http://localhost:8081`)
-
-## アーキテクチャ
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Frontend   │────▶│   FastAPI    │────▶│   MySQL     │
-│  (React)    │     │   Backend    │     │  Database   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │                      
-                           ▼                      
-                    ┌──────────────┐              
-                    │    Redis     │              
-                    │  (Caching)   │              
-                    └──────────────┘              
-                           │                      
-                           ▼                      
-                    ┌──────────────┐              
-                    │   Worker     │              
-                    │ (APScheduler)│              
-                    └──────────────┘              
-                           │                      
-                ┌──────────┴──────────┐           
-                ▼                     ▼           
-         ┌─────────────┐       ┌─────────────┐   
-         │  Torn API   │       │ weav3r.dev  │   
-         │  (Market)   │       │  (Bazaar)   │   
-         └─────────────┘       └─────────────┘   
-```
-
-## 開発
-
-### ローカル開発
+**1. データベースの起動**
+PostgreSQL (TimescaleDB) と Redis が起動している必要があります。
 ```bash
-# バックエンド (ホットリロード有効)
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+docker-compose up -d db redis
+```
 
-# フロントエンド (HMR有効)
-cd frontend
+**2. バックエンド (Go) の起動**
+```bash
+cd server
+go mod download
+
+# APIサーバー
+go run ./cmd/api
+
+# ワーカー (別ターミナルで実行)
+go run ./cmd/workers
+```
+
+**3. フロントエンド (Next.js) の起動**
+```bash
+cd web
 npm install
 npm run dev
 ```
 
-### データベース移行
-新しいカラムを追加する場合:
-1. `backend/app/models/models.py` を更新します
-2. `http://localhost:8081` で PHPMyAdmin にアクセスします
-3. SQLタブで `ALTER TABLE` ステートメントを実行します
+---
 
-## API エンドポイント
+## 📜 ライセンス
 
-- `GET /api/v1/items` - 追跡中のアイテム一覧
-- `GET /api/v1/items/torn` - Tornカタログアイテムの取得
-- `POST /api/v1/items` - アイテムの追跡を追加
-- `DELETE /api/v1/items/{id}` - アイテムの追跡を停止
-- `GET /api/v1/items/{id}/history` - 価格履歴の取得
-- `GET /api/v1/items/{id}/orderbook` - リアルタイムオーダーブック（上位5件）の取得
-- `GET /api/v1/settings/apikeys` - APIキー一覧
-- `POST /api/v1/settings/apikeys` - APIキーの追加
-- `DELETE /api/v1/settings/apikeys/{id}` - APIキーの削除
-
-## ライセンス
-
-MIT
+本プロジェクトは **MIT License** の下で公開されています。
