@@ -1,177 +1,115 @@
 version: '3.8'
 
 services:
-  # Internal DB (Enabled with 'internal' profile)
   db:
-    image: mysql:8.0
-    container_name: torn_db
-    command: --default-authentication-plugin=mysql_native_password
+    image: timescale/timescaledb:latest-pg16
+    container_name: torn_market_db
     environment:
-      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${DB_NAME}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespwd
+      POSTGRES_DB: torn_market
     ports:
-      - "3306:3306"
+      - "5432:5432"
     volumes:
-      - db_data:/var/lib/mysql
+      - timescaledb_data:/var/lib/postgresql/data
     healthcheck:
-      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost" ]
-      timeout: 20s
-      retries: 10
-    restart: unless-stopped
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
     profiles:
       - internal
-    networks:
-      default:
-        aliases:
-          - mysql_host
 
-  # External DB Proxy (Enabled with 'external' profile)
   db-proxy:
     build:
       context: .
       dockerfile: Dockerfile.proxy
-    container_name: torn_db_proxy
+    container_name: torn_market_db_proxy
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - /dev/net/tun:/dev/net/tun
+      - tailscale_state:/var/lib/tailscale
     environment:
       - TS_AUTHKEY=${TS_AUTHKEY}
       - REMOTE_DB_HOST=${REMOTE_DB_HOST}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - tailscale_data:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    restart: unless-stopped
-    profiles:
-      - external
+      - DB_PORT=${DB_PORT:-5432}
+      - TS_HOSTNAME=torn-market-proxy
+    healthcheck:
+      test: [ "CMD-SHELL", "nc -z localhost 5432" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       default:
         aliases:
-          - mysql_host
+          - db
+    profiles:
+      - external
 
   redis:
     image: redis:alpine
-    container_name: torn_redis
+    container_name: torn_market_redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
-    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    profiles:
+      - internal
+      - external
 
   api:
-    build: ./backend
-    container_name: torn_api
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --proxy-headers --forwarded-allow-ips '*'
-    volumes:
-      - ./backend:/app
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: torn_market_api
     ports:
-      - "8000:8000"
+      - "8080:8080"
     environment:
-      # DB_HOST is fixed to 'mysql_host', which resolves to either 'db' or 'db-proxy'
-      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-      - TORN_API_KEY=${TORN_API_KEY}
-    # Removed depends_on for DB to support profiles
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USER=${DB_USER:-postgres}
+      - DB_PASSWORD=${DB_PASSWORD:-postgrespwd}
+      - DB_NAME=${DB_NAME:-torn_market}
+      - REDIS_URL=redis://redis:6379
+      - ENVIRONMENT=production
     depends_on:
+      db:
+        condition: service_healthy
+        required: false
+      db-proxy:
+        condition: service_healthy
+        required: false
       redis:
-        condition: service_started
+        condition: service_healthy
     restart: unless-stopped
+    profiles:
+      - internal
+      - external
 
-  worker:
-    build: ./backend
-    container_name: torn_worker
-    command: python -m app.worker
-    volumes:
-      - ./backend:/app
-    environment:
-      # DB_HOST is fixed to 'mysql_host'
-      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      - TORN_API_KEY=${TORN_API_KEY}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    depends_on:
-      redis:
-        condition: service_started
-    restart: unless-stopped
-
-  websocket:
-    build: ./backend
-    container_name: torn_websocket
-    command: python run_ws.py
-    volumes:
-      - ./backend:/app
-    environment:
-      - DATABASE_URL=mysql+asyncmy://${DB_USER}:${DB_PASSWORD}@mysql_host:${DB_PORT}/${DB_NAME}
-      - REDIS_URL=redis://redis:6379/0
-      # TORN_WS_TOKEN is loaded from DB, but we pass other envs just in case
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
-    depends_on:
-      redis:
-        condition: service_started
-    restart: unless-stopped
-
-  web:
-    build: ./frontend
-    container_name: torn_web
-    volumes:
-      - ./frontend/nginx.conf:/etc/nginx/conf.d/default.conf
+  frontend:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    container_name: torn_market_web
     ports:
-      - "3000:80"
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8080
     depends_on:
       - api
     restart: unless-stopped
-
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin
-    container_name: torn_pma
-    environment:
-      PMA_HOST: mysql_host
-      PMA_PORT: ${DB_PORT}
-      PMA_USER: ${DB_USER}
-      PMA_PASSWORD: ${DB_PASSWORD}
-    ports:
-      - "8081:80"
-    restart: unless-stopped
-    # Can run with either profile as long as a DB is present.
-    # If no DB profile is active, this will just fail to connect.
-
-    # Tailscale Web Proxy (Enabled with 'external' profile)
-    # Exposes the web frontend via Tailscale network
-  tailscale-web:
-    image: tailscale/tailscale:latest
-    container_name: torn_ts_web
-    hostname: torn-market-web
-    environment:
-      - TS_AUTHKEY=${TS_AUTHKEY}
-      - TS_STATE_DIR=/var/lib/tailscale
-      - TS_USERSPACE=false
-    volumes:
-      - tailscale_web_data:/var/lib/tailscale
-      - /dev/net/tun:/dev/net/tun
-    cap_add:
-      - NET_ADMIN
-      - NET_RAW
-    # Use entrypoint to start tailscale and serve
-    entrypoint: [ "/bin/sh", "-c" ]
-    command:
-      - |
-        tailscaled --state=/var/lib/tailscale/tailscaled.state &
-        sleep 5
-        tailscale up --authkey=$${TS_AUTHKEY} --hostname=torn-market-web --accept-dns=false --reset
-        tailscale serve --bg http://web:80
-        sleep infinity
-    restart: unless-stopped
     profiles:
+      - internal
       - external
-    depends_on:
-      - web
 
 volumes:
-  db_data:
+  timescaledb_data:
+  tailscale_state:
   redis_data:
-  tailscale_data:
-  tailscale_web_data:

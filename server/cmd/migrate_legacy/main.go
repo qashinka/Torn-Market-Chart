@@ -1,0 +1,42 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+
+	"github.com/akagifreeez/torn-market-chart/internal/config"
+	"github.com/akagifreeez/torn-market-chart/pkg/database"
+)
+
+func main() {
+	// Load configuration
+	cfg, err := config.Load()
+	if err != nil {
+		fmt.Printf("Failed to load config: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Connect to database
+	db, err := database.New(context.Background(), cfg.DatabaseURL)
+	if err != nil {
+		fmt.Printf("Failed to connect: %v\n", err)
+		os.Exit(1)
+	}
+	defer db.Close()
+
+	rows, err := db.Pool.Query(context.Background(),
+		"SELECT column_name, data_type FROM information_schema.columns WHERE table_name = 'users'")
+	if err != nil {
+		fmt.Printf("Query failed: %v\n", err)
+		os.Exit(1)
+	}
+	defer rows.Close()
+
+	fmt.Println("Users Table Schema:")
+	for rows.Next() {
+		var name, dtype string
+		rows.Scan(&name, &dtype)
+		fmt.Printf("- %s (%s)\n", name, dtype)
+	}
+}

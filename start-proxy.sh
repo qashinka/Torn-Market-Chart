@@ -27,5 +27,5 @@ if [ -n "$TS_AUTHKEY" ]; then
 fi
 
 # Start socat
-echo "Starting socat proxy forwarding 0.0.0.0:3306 -> ${REMOTE_DB_HOST}:3306"
-exec socat TCP-LISTEN:3306,fork,bind=0.0.0.0 TCP:${REMOTE_DB_HOST}:3306
+echo "Starting socat proxy forwarding 0.0.0.0:5432 -> ${REMOTE_DB_HOST}:${DB_PORT:-5432}"
+exec socat TCP-LISTEN:5432,fork,bind=0.0.0.0 TCP:${REMOTE_DB_HOST}:${DB_PORT:-5432}

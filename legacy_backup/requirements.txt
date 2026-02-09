@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-sqlalchemy
-apscheduler
-requests
-pymysql
-cryptography
-curl_cffi

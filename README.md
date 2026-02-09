@@ -1,201 +1,174 @@
-# Torn Market Chart
+# Torn Market Chart 📈
 
-Torn City Market Tracker & Visualization Tool with TradingView-like charts and real-time order book.
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Go](https://img.shields.io/badge/backend-Go_1.22+-00ADD8.svg)
+![Next.js](https://img.shields.io/badge/frontend-Next.js_14-black.svg)
+![TimescaleDB](https://img.shields.io/badge/database-TimescaleDB-orange.svg)
 
-## Features
+A high-performance, real-time market tracking and visualization tool for **Torn City**.  
+Built with **Go** and **Next.js**, designed to handle high-frequency data updates and provide **TradingView-quality charts**.
 
-### 📊 Advanced Charting
-- **TradingView-Style Charts**: Powered by `lightweight-charts` with Area and Line series
-- **Price Visualization**: Displays Low prices, Averages (Top 5), and 24-hour Moving Average trends
-- **Interactive Legend**: Real-time crosshair tooltip showing all price metrics
-- **Auto-scaling**: Automatically adjusts chart scale when switching between items
-- **Data Quality**: Filters out invalid data (zero/null values) for clean visualization
+---
 
-### 📈 Order Book Integration
-- **Live Top 5 Listings**: View cheapest 5 listings from both Item Market and Bazaar
-- **DB Caching**: Instant display from database cache, updated every minute by background worker
-- **Direct Links**: Click any listing to navigate directly to Item Market or seller's Bazaar
-- **Dual Source**: Fetches from Torn Official API (Market) and weav3r.dev (Bazaar)
+## ✨ Features
 
-### 🔑 Multi-API Key Management
-- **Key Rotation**: Round-robin rotation through configured API keys
-- **Dynamic Rate Limiting**: Automatically scales requests based on number of active keys
-- **Per-Key Tracking**: Monitor last usage time and status for each key
-- **Fallback Support**: Uses environment variable as fallback if no DB keys configured
+### 🚀 High-Performance Data Collection
+- **Real-time WebSocket**: Connects to Torn's `wss://ws-centrifugo.torn.com` to receive trade updates instantly (sub-second latency).
+- **Hybrid Polling**:
+  - **Bazaar Poller**: Checks watched items every **10 seconds** using `weav3r.dev` API.
+  - **Background Crawler**: Rotates through **all 1,200+ items** in the background (0.5s interval) to build a complete price history.
+- **Concurrency**: Written in Go to handle hundreds of concurrent requests efficiently.
 
-### 🔔 Price Alerts
-- **Discord Notifications**: Get notified via Discord Webhook when prices hit your targets
-- **Flexible Conditions**: Set alerts for prices going above or below specific thresholds
-- **One-time or Recurring**: Choose between single-trigger alerts or persistent monitoring
-- **Auto-tracking**: Items with alerts are automatically tracked for price updates
+### 📊 Advanced Visualization
+- **TradingView-Style Charts**: Built with `lightweight-charts`. Supports Area, Line, and Candlestick (planned) series.
+- **Live Order Book**: Displays the top 5 cheapest listings from both **Item Market** and **Bazaar** side-by-side.
+- **Crosshair Tooltip**: Inspect precise Time, Market Price, Bazaar Price, and Moving Averages simultaneously.
 
-### ⚡ Real-time Price Updates (WebSocket)
-- **Instant Alerts**: Triggers Discord notifications immediately when prices drop (sub-second latency).
-- **Hybrid Fetching**: Real-time `minPrice` updates via WebSocket + 1-minute full sync via API.
-- **Auto-Subscription**: Automatically subscribes to real-time updates for all tracked items.
-- **Resilient**: Auto-reconnection logic and alerts for token expiration.
+### 🔔 Smart Alerting
+- **Discord Notifications**: Sends rich Embed messages to your Discord server via Webhook.
+- **Complex Triggers**:
+  - "Price Below X" / "Price Above Y"
+  - **Deduplication**: Intelligent filtering prevents spamming the same price multiple times.
+  - **Cooldown**: Configurable silence periods after triggering.
 
-### ⚙️ Smart Price Updates
-- **Concurrent Fetching**: Parallelized API requests with semaphore-controlled concurrency (limit: 5)
-- **Error Resilience**: Failed fetches don't block other items; recorded with timestamp
-- **Backoff Strategy**: Reduces fetch frequency for consistently failing items
-- **Listings Snapshot**: Stores top 5 market/bazaar listings in DB for instant access
+### 🛡️ Reliability & Scale
+- **Rate Limiting**: Redis-backed sliding window limiter ensures compliance with API rules (e.g., 100/min).
+- **API Key Rotation**: Automatically rotates through multiple API keys to maximize throughput.
+- **TimescaleDB**: Optimizes storage for millions of price data points using hyper-tables and compression.
 
-## Setup
+---
 
-1. Copy `.env.example` to `.env` and configure:
-   ```env
-   DB_ROOT_PASSWORD=your_root_password
-   DB_NAME=torn_market
-   DB_USER=torn_market
-   DB_PASSWORD=your_db_password
-   # Tailscale IP of your external database
-   # Tailscale IP of your external database (Required for Mode B)
-   REMOTE_DB_HOST=100.90.10.0
-   DB_PORT=3306
+## 🏗️ Architecture
 
-   # Required: Your Tailscale Auth Key (Reusable) - Needed for Mode B
-   TS_AUTHKEY=tskey-auth-xxxxx
-   
-   ADMIN_PASSWORD=your_admin_password
-   TORN_API_KEY=optional_fallback_key
-   
-   # Optional: Set default profile (internal or external)
-   # COMPOSE_PROFILES=internal
+```mermaid
+graph TD
+    User[User / Browser] -->|Next.js App| Web[Web Frontend]
+    Web -->|HTTP JSON| API[Go API Server]
+    
+    subgraph Backend [Go + Infrastructure]
+        API
+        Worker1[Bazaar Poller]
+        Worker2[Background Crawler]
+        Worker3[Global Sync]
+        WS[Torn WebSocket Service]
+    end
+    
+    subgraph Data [Storage]
+        DB[(TimescaleDB)]
+        Redis[(Redis Cache)]
+    end
+    
+    subgraph External [External APIs]
+        TornAPI[Torn Official API]
+        Weav3r[Weav3r.dev API]
+        TornWS[Torn WebSocket]
+        Discord[Discord Webhook]
+    end
+
+    API --> DB
+    API --> Redis
+    
+    Worker1 -->|Poll 10s| Weav3r
+    Worker1 --> DB
+    Worker1 --> Redis
+    
+    Worker2 -->|Crawl 0.5s| TornAPI
+    Worker2 --> DB
+    
+    WS -->|Real-time| TornWS
+    WS -->|Alert| Discord
+```
+
+---
+
+## 🛠️ Tech Stack
+
+| Category     | Technology      | Description                                           |
+| :----------- | :-------------- | :---------------------------------------------------- |
+| **Backend**  | **Go (Golang)** | Main server logic, Workers, Chi Router, pgx driver.   |
+| **Frontend** | **Next.js 14**  | React framework (App Router), ShadcnUI, TailwindCSS.  |
+| **Database** | **TimescaleDB** | PostgreSQL extension for high-speed time-series data. |
+| **Cache**    | **Redis**       | Rate limiting, API Key management, Hot caching.       |
+| **Infra**    | **Docker**      | Full stack containerization (Compose).                |
+
+---
+
+## 🚀 Getting Started
+
+### Prerequisites
+- **Docker** & **Docker Compose**
+- **Torn API Key** (Public/Custom)
+
+### Installation (Docker - Recommended)
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/your-repo/torn-market-chart.git
+   cd torn-market-chart
    ```
 
+2. **Configure Environment**
+   Copy `.env.example` to `.env` and fill in your details.
+   ```bash
+   cp .env.example .env
+   # Edit .env with your DB credentials & API Keys
+   ```
 
-2. Start the application:
+3. **Start Services**
+   ```bash
+   # Mode A: Internal DB (Easiest)
+   docker-compose --profile internal up -d --build
+   ```
+   
+4. **Access the Dashboard**
+   Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-    ### Mode A: Internal Database (Default)
-    Best for local testing and self-contained deployment.
-    ```bash
-    docker-compose --profile internal up -d --build
-    ```
+---
 
-    ### Mode B: Tailscale + External Database
-    Connects to an external database via a Tailscale Proxy container.
-    Ensure `REMOTE_DB_HOST` and `TS_AUTHKEY` are set in `.env`.
-    ```bash
-    docker-compose --profile external up -d --build
-    ```
+## 🔧 Configuration (.env)
 
-3. Access the dashboard at `http://localhost:3000`
+| Variable                    | Description                         | Default                  |
+| :-------------------------- | :---------------------------------- | :----------------------- |
+| `DB_DSN`                    | PostgreSQL Connection String        | `postgres://...`         |
+| `REDIS_URL`                 | Redis Connection String             | `redis://localhost:6379` |
+| `TORN_API_KEY`              | Fallback API Key                    | `""`                     |
+| `DISCORD_WEBHOOK_URL`       | Alert notification URL              | `""`                     |
+| `BAZAAR_RATE_LIMIT`         | Requests per minute for Weav3r      | `1800`                   |
+| `BACKGROUND_CRAWL_INTERVAL` | Interval between background fetches | `500ms`                  |
 
-4. Configure Settings:
-   - Navigate to **Settings** page (Sidebar)
-   - **API Keys**: Add Torn API keys for polling.
-   - **WebSocket**: Enter your Torn WebSocket Token for real-time updates.
-   - **Notifications**: Configure Discord Webhook URL.
+---
 
-5. Track Items:
-   - Go to **Manage Items**
-   - Search for items in the Torn catalog
-   - Click **Track** to add them to your dashboard
+## 💻 Development
 
-## Tech Stack
+### Run Locally (Without Docker)
 
-### Backend
-- **FastAPI**: Modern Python web framework with async support
-- **SQLAlchemy**: ORM with async MySQL/MariaDB support (`asyncmy`)
-- **APScheduler**: Background job scheduling for periodic price updates
-- **websockets**: Python client for Torn's WebSocket updates
-- **Redis**: Rate limiting and API key rotation management
-- **curl_cffi**: Cloudflare-bypassing HTTP client for bazaar scraping
-
-### Frontend
-- **React 18**: Modern UI library with hooks
-- **Vite**: Fast development and build tooling
-- **lightweight-charts**: TradingView-quality charting library
-- **TanStack Query**: Data fetching and caching
-- **Axios**: HTTP client for API communication
-- **TailwindCSS**: Utility-first CSS framework
-
-### Database
-- **MySQL 8.0**: Primary data store for items, prices, and metadata
-- **Redis**: In-memory cache for rate limiting and key rotation
-
-### Infrastructure
-- **Docker & Docker Compose**: Containerized deployment
-- **Nginx**: Reverse proxy for frontend static files (in production)
-- **PHPMyAdmin**: Database management interface (`http://localhost:8081`)
-
-## Architecture
-
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│  Frontend   │────▶│   FastAPI    │────▶│   MySQL     │
-│  (React)    │     │   Backend    │     │  Database   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │                      
-                           ▼                      
-                    ┌──────────────┐              
-                    │    Redis     │              
-                    │  (Caching)   │              
-                    └──────────────┘              
-                           │                      
-                           ▼                      
-                       ┌──────────────┐              
-                    │   Worker     │              
-                    │ (APScheduler)│              
-                    └──────────────┘              
-                           │                      
-                ┌──────────┴──────────┐           
-                ▼                     ▼           
-         ┌─────────────┐       ┌─────────────┐   
-         │  Torn API   │       │ weav3r.dev  │   
-         │  (Market)   │       │  (Bazaar)   │   
-         └─────────────┘       └─────────────┘   
-
-                    ┌──────────────┐
-                    │  WebSocket   │◀───┐
-                    │   Service    │    │
-                    └──────┬───────┘    │
-                           │            │
-                           ▼            │
-                    ┌─────────────┐     │
-                    │  Torn WS    │─────┘
-                    │   Server    │
-                    └─────────────┘
-```
-
-## Development
-
-### Local Development
+**1. Start Databases**
+Ensure PostgreSQL (TimescaleDB) and Redis are running.
 ```bash
-# Backend (with hot reload)
-cd backend
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+docker-compose up -d db redis
+```
 
-# Frontend (with HMR)
-cd frontend
+**2. Start Backend (Go)**
+```bash
+cd server
+go mod download
+
+# Run API Server
+go run ./cmd/api
+
+# Run Background Workers (in new terminal)
+go run ./cmd/workers
+```
+
+**3. Start Frontend (Next.js)**
+```bash
+cd web
 npm install
 npm run dev
 ```
 
-### Database Migration
-When adding new columns:
-1. Update `backend/app/models/models.py`
-2. Access PHPMyAdmin at `http://localhost:8081`
-3. Execute ALTER TABLE statement in SQL tab
+---
 
-## API Endpoints
+## 📜 License
 
-- `GET /api/v1/items` - List tracked items
-- `GET /api/v1/items/torn` - Get Torn catalog items
-- `POST /api/v1/items` - Add item to tracking
-- `DELETE /api/v1/items/{id}` - Stop tracking item
-- `GET /api/v1/items/{id}/history` - Get price history
-- `GET /api/v1/items/{id}/orderbook` - Get live order book (Top 5 listings)
-- `GET /api/v1/settings/apikeys` - List API keys
-- `POST /api/v1/settings/apikeys` - Add API key
-- `DELETE /api/v1/settings/apikeys/{id}` - Remove API key
-- `GET /api/v1/alerts/item/{id}` - Get alerts for item
-- `POST /api/v1/alerts` - Create price alert
-- `DELETE /api/v1/alerts/{id}` - Delete price alert
-
-## License
-
-MIT
-
+This project is licensed under the **MIT License**.
