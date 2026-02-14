@@ -71,10 +71,12 @@ func (b *BazaarPoller) pollAll(ctx context.Context) {
 	start := time.Now()
 
 	// Select only id and name (id IS the Torn item ID)
+	// We verify against user_watchlists to ensure we only poll what users are actually watching
 	rows, err := b.db.Query(ctx, `
-		SELECT id, name FROM items 
-		WHERE is_watched = true
-		ORDER BY id
+		SELECT DISTINCT i.id, i.name 
+		FROM items i
+		JOIN user_watchlists uw ON i.id = uw.item_id
+		ORDER BY i.id
 	`)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to fetch watched items")

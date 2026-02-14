@@ -17,6 +17,7 @@ import (
 	"github.com/akagifreeez/torn-market-chart/internal/config"
 	"github.com/akagifreeez/torn-market-chart/internal/handlers"
 	"github.com/akagifreeez/torn-market-chart/internal/services"
+	"github.com/akagifreeez/torn-market-chart/internal/workers"
 	"github.com/akagifreeez/torn-market-chart/pkg/database"
 	"github.com/akagifreeez/torn-market-chart/pkg/tornapi"
 )
@@ -84,11 +85,35 @@ func main() {
 
 	// Initialize services
 	keyManager := services.NewKeyManager(db, cfg)
+	keyManager.StartAutoRefresh(ctx) // Start key pool refresh
+
 	settingsService := services.NewSettingsService(db.Pool)
 	seedSettings(ctx, settingsService, cfg)
 
+	alertService := services.NewAlertService(db.Pool, settingsService, cfg.AlertCooldown, cfg.PriceThreshold)
+
 	// Initialize Torn API Client for Inventory Fetch
 	client := tornapi.NewClient(cfg.TornAPIKeys, cfg.RedisURL)
+
+	// Initialize Rate Limiter for Poller
+	// Base limit is usually 100/min per key public, but we set safe defaults in config
+	limiter, err := tornapi.NewRateLimiter(cfg.RedisURL, cfg.BazaarRateLimit, "torn_api:rate_limit")
+	if err != nil {
+		log.Warn().Err(err).Msg("Failed to initialize RateLimiter, proceeding without it (unsafe for high load)")
+	}
+
+	// Initialize and Start Workers
+	globalSync := workers.NewGlobalSync(db.Pool, client, cfg)
+	go globalSync.Start(ctx)
+
+	bazaarPoller := workers.NewBazaarPoller(db.Pool, cfg, alertService, limiter)
+	go bazaarPoller.Start(ctx)
+
+	crawler := workers.NewBackgroundCrawler(db.Pool, client, keyManager, cfg)
+	go crawler.Start(ctx)
+
+	wsService := services.NewTornWebSocketService(cfg, db.Pool, alertService)
+	go wsService.Start(ctx)
 
 	// Initialize handlers
 	priceHandler := handlers.NewPriceHandler(db)

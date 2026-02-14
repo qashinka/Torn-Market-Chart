@@ -78,6 +78,8 @@ services:
       - DB_PASSWORD=${DB_PASSWORD:-postgrespwd}
       - DB_NAME=${DB_NAME:-torn_market}
       - REDIS_URL=redis://redis:6379
+      - TORN_API_KEYS=${TORN_API_KEY}
+      - TORN_WS_TOKEN=${TORN_WS_TOKEN}
       - ENVIRONMENT=production
     depends_on:
       db:

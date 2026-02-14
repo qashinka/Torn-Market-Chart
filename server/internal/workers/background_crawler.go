@@ -52,18 +52,18 @@ func (c *BackgroundCrawler) Start(ctx context.Context) {
 // crawlNext fetches the least recently updated item
 func (c *BackgroundCrawler) crawlNext(ctx context.Context) {
 	// 1. Find the item that hasn't been updated for the longest time
-	// Priority: watched items, high circulation items, or stale low circulation items
+	// Priority: watched items (in user_watchlists), high circulation items, or stale low circulation items
 	var itemID int64
 	var itemName string
 	err := c.db.QueryRow(ctx, `
-		SELECT id, name FROM items
+		SELECT i.id, i.name FROM items i
 		WHERE 
-			is_watched = true
-			OR circulation > 10000 
-			OR (circulation <= 10000 AND (last_updated_at IS NULL OR last_updated_at < NOW() - INTERVAL '24 hours'))
+			(EXISTS(SELECT 1 FROM user_watchlists uw WHERE uw.item_id = i.id) AND (i.last_updated_at IS NULL OR i.last_updated_at < NOW() - INTERVAL '60 seconds'))
+			OR (i.circulation > 10000 AND (i.last_updated_at IS NULL OR i.last_updated_at < NOW() - INTERVAL '1 hour'))
+			OR (i.circulation <= 10000 AND (i.last_updated_at IS NULL OR i.last_updated_at < NOW() - INTERVAL '24 hours'))
 		ORDER BY 
-			is_watched DESC,
-			last_updated_at ASC NULLS FIRST
+			CASE WHEN EXISTS(SELECT 1 FROM user_watchlists uw WHERE uw.item_id = i.id) THEN 1 ELSE 0 END DESC,
+			i.last_updated_at ASC NULLS FIRST
 		LIMIT 1
 	`).Scan(&itemID, &itemName)
 

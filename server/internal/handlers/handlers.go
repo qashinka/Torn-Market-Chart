@@ -330,7 +330,7 @@ func (h *PriceHandler) GetTopListings(w http.ResponseWriter, r *http.Request) {
 		URL        string `json:"url"`
 	}
 
-	var listings []ListingResponse
+	listings := make([]ListingResponse, 0)
 
 	if priceType == "bazaar" {
 		client := services.NewExternalPriceClient()
@@ -488,7 +488,7 @@ func (h *PriceHandler) ListWatched(w http.ResponseWriter, r *http.Request) {
 	}
 	defer rows.Close()
 
-	var items []models.Item
+	items := make([]models.Item, 0)
 	for rows.Next() {
 		var item models.Item
 		if err := rows.Scan(

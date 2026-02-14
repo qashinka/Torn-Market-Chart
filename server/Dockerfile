@@ -1,5 +1,5 @@
 # Build stage
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -29,7 +29,7 @@ COPY --from=builder /api /app/api
 
 # Copy entrypoint script
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN apk add --no-cache dos2unix && dos2unix /entrypoint.sh && chmod +x /entrypoint.sh
 
 # Expose port
 EXPOSE 8080
