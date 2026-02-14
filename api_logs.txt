@@ -1,8 +1,0 @@
-Starting API server...
-Database Host: db
-Note: ERROR: continuous aggregate refresh policy already exists for "market_prices_1m" (SQLSTATE 22023) (policy may already exist)
-Note: ERROR: continuous aggregate refresh policy already exists for "market_prices_1h" (SQLSTATE 22023) (policy may already exist)
-Note: ERROR: continuous aggregate refresh policy already exists for "market_prices_1d" (SQLSTATE 22023) (policy may already exist)
-Note: ERROR: continuous aggregate refresh policy already exists for "bazaar_prices_1m" (SQLSTATE 22023) (policy may already exist)
-Note: ERROR: continuous aggregate refresh policy already exists for "bazaar_prices_1h" (SQLSTATE 22023) (policy may already exist)
-Note: ERROR: continuous aggregate refresh policy already exists for "bazaar_prices_1d" (SQLSTATE 22023) (policy may already exist)

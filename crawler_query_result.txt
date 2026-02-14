@@ -1,9 +1,0 @@
- id  |     name     
------+--------------
- 283 | Donator Pack
- 196 | Cannabis
- 206 | Xanax
-  66 | Morphine
- 430 | Coconut Bra
-(5 rows)
-
