@@ -138,6 +138,13 @@ graph TD
 
 ---
 
+## ☁️ Deployment
+
+For detailed instructions on deploying with Cloudflare Tunnel (no port forwarding required), please see [DEPLOYMENT_JP.md](./DEPLOYMENT_JP.md) (Japanese).
+
+---
+
+
 ## 💻 Development
 
 ### Run Locally (Without Docker)

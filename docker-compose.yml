@@ -95,6 +95,21 @@ services:
       - internal
       - external
 
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: torn_market_tunnel
+    restart: unless-stopped
+    environment:
+      - TUNNEL_TOKEN=${TUNNEL_TOKEN}
+    command: tunnel run
+    networks:
+      - default
+    depends_on:
+      - frontend
+      - api
+    profiles:
+      - external
+
   frontend:
     build:
       context: ./web
@@ -103,7 +118,7 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_URL=http://api:8080
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://api:8080}
     depends_on:
       - api
     restart: unless-stopped

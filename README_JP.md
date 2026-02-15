@@ -138,6 +138,13 @@ graph TD
 
 ---
 
+## ☁️ デプロイ (Deployment)
+
+Cloudflare Tunnel を使用した安全な公開方法（ポート開放不要）については、[DEPLOYMENT_JP.md](./DEPLOYMENT_JP.md) をご覧ください。
+
+---
+
+
 ## 💻 ローカル開発 (Dockerなし)
 
 **1. データベースの起動**
