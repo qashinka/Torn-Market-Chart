@@ -21,26 +21,28 @@ type ItemState struct {
 
 // BazaarPoller handles high-frequency bazaar price fetching using Weav3r.dev API
 type BazaarPoller struct {
-	db            *pgxpool.Pool
-	weav3rClient  *services.ExternalPriceClient
-	alertService  *services.AlertService
-	interval      time.Duration
-	maxConcurrent int
-	itemStates    map[int64]*ItemState
-	statesMu      sync.RWMutex
-	limiter       *tornapi.RateLimiter
+	db              *pgxpool.Pool
+	weav3rClient    *services.ExternalPriceClient
+	alertService    *services.AlertService
+	interval        time.Duration
+	maxConcurrent   int
+	bazaarRateLimit int
+	itemStates      map[int64]*ItemState
+	statesMu        sync.RWMutex
+	limiter         *tornapi.RateLimiter
 }
 
 // NewBazaarPoller creates a new BazaarPoller worker
 func NewBazaarPoller(db *pgxpool.Pool, cfg *config.Config, alertService *services.AlertService, limiter *tornapi.RateLimiter) *BazaarPoller {
 	return &BazaarPoller{
-		db:            db,
-		weav3rClient:  services.NewExternalPriceClient(),
-		alertService:  alertService,
-		interval:      cfg.BazaarPollInterval,
-		maxConcurrent: cfg.MaxConcurrentFetches,
-		itemStates:    make(map[int64]*ItemState),
-		limiter:       limiter,
+		db:              db,
+		weav3rClient:    services.NewExternalPriceClient(),
+		alertService:    alertService,
+		interval:        cfg.BazaarPollInterval,
+		maxConcurrent:   cfg.MaxConcurrentFetches,
+		bazaarRateLimit: cfg.BazaarRateLimit,
+		itemStates:      make(map[int64]*ItemState),
+		limiter:         limiter,
 	}
 }
 
@@ -65,13 +67,45 @@ func (b *BazaarPoller) Start(ctx context.Context) {
 	}
 }
 
-// pollAll fetches prices for all WATCHED items using Weav3r.dev
-// Note: id column IS the Torn item ID now (no separate torn_id)
+// pollAll fetches prices using Weav3r.dev API in two phases:
+// Phase 1: Watched items (high priority, every cycle)
+// Phase 2: Stale tracked items (fill remaining rate budget)
 func (b *BazaarPoller) pollAll(ctx context.Context) {
 	start := time.Now()
 
-	// Select only id and name (id IS the Torn item ID)
-	// We verify against user_watchlists to ensure we only poll what users are actually watching
+	// Phase 1: Watched items (high priority)
+	watchedItems := b.getWatchedItems(ctx)
+	watchedCount := b.fetchItems(ctx, watchedItems, "Phase1-Watched")
+
+	// Phase 2: Fill remaining rate budget with stale tracked items
+	// Calculate how many requests we can still make this cycle
+	// Rate budget per cycle = (rateLimit / 60) * interval_seconds
+	intervalSec := b.interval.Seconds()
+	budgetPerCycle := int(float64(b.bazaarRateLimit) / 60.0 * intervalSec)
+	remaining := budgetPerCycle - watchedCount
+	if remaining > 0 {
+		staleItems := b.getStaleTrackedItems(ctx, remaining)
+		if len(staleItems) > 0 {
+			staleCount := b.fetchItems(ctx, staleItems, "Phase2-Stale")
+			log.Debug().
+				Int("watched", watchedCount).
+				Int("stale", staleCount).
+				Int("budget", budgetPerCycle).
+				Dur("elapsed", time.Since(start)).
+				Msg("Bazaar poll cycle completed (2-phase)")
+			return
+		}
+	}
+
+	log.Debug().
+		Int("watched", watchedCount).
+		Int("budget", budgetPerCycle).
+		Dur("elapsed", time.Since(start)).
+		Msg("Bazaar poll cycle completed")
+}
+
+// getWatchedItems returns items in user watchlists
+func (b *BazaarPoller) getWatchedItems(ctx context.Context) []itemInfo {
 	rows, err := b.db.Query(ctx, `
 		SELECT DISTINCT i.id, i.name 
 		FROM items i
@@ -80,16 +114,42 @@ func (b *BazaarPoller) pollAll(ctx context.Context) {
 	`)
 	if err != nil {
 		log.Error().Err(err).Msg("Failed to fetch watched items")
-		return
+		return nil
 	}
 	defer rows.Close()
 
-	type itemInfo struct {
-		ID   int64 // This IS the Torn item ID
-		Name string
-	}
-	var items []itemInfo
+	return b.scanItems(rows)
+}
 
+// getStaleTrackedItems returns tracked items NOT in watchlists, ordered by staleness
+func (b *BazaarPoller) getStaleTrackedItems(ctx context.Context, limit int) []itemInfo {
+	rows, err := b.db.Query(ctx, `
+		SELECT i.id, i.name FROM items i
+		WHERE i.is_tracked = true
+			AND NOT EXISTS (SELECT 1 FROM user_watchlists uw WHERE uw.item_id = i.id)
+			AND (i.last_updated_at IS NULL OR i.last_updated_at < NOW() - INTERVAL '5 minutes')
+		ORDER BY i.last_updated_at ASC NULLS FIRST
+		LIMIT $1
+	`, limit)
+	if err != nil {
+		log.Error().Err(err).Msg("Failed to fetch stale tracked items")
+		return nil
+	}
+	defer rows.Close()
+
+	return b.scanItems(rows)
+}
+
+type itemInfo struct {
+	ID   int64
+	Name string
+}
+
+func (b *BazaarPoller) scanItems(rows interface {
+	Next() bool
+	Scan(...interface{}) error
+}) []itemInfo {
+	var items []itemInfo
 	for rows.Next() {
 		var item itemInfo
 		if err := rows.Scan(&item.ID, &item.Name); err != nil {
@@ -102,17 +162,20 @@ func (b *BazaarPoller) pollAll(ctx context.Context) {
 		b.statesMu.RUnlock()
 
 		if state != nil && time.Now().Before(state.CooldownUntil) {
-			continue // Skip items in cooldown
+			continue
 		}
 
 		items = append(items, item)
 	}
+	return items
+}
 
+// fetchItems concurrently fetches bazaar prices for the given items, returns success count
+func (b *BazaarPoller) fetchItems(ctx context.Context, items []itemInfo, phase string) int {
 	if len(items) == 0 {
-		return
+		return 0
 	}
 
-	// Create semaphore for concurrency control
 	sem := make(chan struct{}, b.maxConcurrent)
 	var wg sync.WaitGroup
 
@@ -128,14 +191,13 @@ func (b *BazaarPoller) pollAll(ctx context.Context) {
 			defer wg.Done()
 			defer func() { <-sem }() // Release
 
-			// Weighted Rate Limiting
+			// Rate Limiting
 			if b.limiter != nil {
 				if err := b.limiter.WaitForTicket(ctx, 1); err != nil {
 					return
 				}
 			}
 
-			// item.ID IS the Torn item ID
 			if err := b.fetchAndStore(ctx, item.ID); err != nil {
 				countMu.Lock()
 				failCount++
@@ -154,13 +216,15 @@ func (b *BazaarPoller) pollAll(ctx context.Context) {
 
 	wg.Wait()
 
-	elapsed := time.Since(start)
-	log.Debug().
-		Int("total", len(items)).
-		Int("success", successCount).
-		Int("failed", failCount).
-		Dur("elapsed", elapsed).
-		Msg("Bazaar poll cycle completed (Weav3r)")
+	if failCount > 0 {
+		log.Debug().
+			Str("phase", phase).
+			Int("success", successCount).
+			Int("failed", failCount).
+			Msg("Bazaar fetch phase completed with failures")
+	}
+
+	return successCount
 }
 
 // fetchAndStore retrieves market data from Weav3r.dev and stores it
