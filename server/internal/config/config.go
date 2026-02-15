@@ -59,7 +59,7 @@ func Load() (*Config, error) {
 		DiscordWebhookURL: getEnv("DISCORD_WEBHOOK_URL", ""),
 		RedisURL:          getEnv("REDIS_URL", "redis://127.0.0.1:6379"),
 
-		BazaarPollInterval:      getDurationEnv("BAZAAR_POLL_INTERVAL", 10*time.Second),
+		BazaarPollInterval:      getDurationEnv("BAZAAR_POLL_INTERVAL", 30*time.Second),
 		BackgroundCrawlInterval: getDurationEnv("BACKGROUND_CRAWL_INTERVAL", 500*time.Millisecond),
 		GlobalSyncInterval:      getDurationEnv("GLOBAL_SYNC_INTERVAL", 24*time.Hour),
 		KeyCheckInterval:        getDurationEnv("KEY_CHECK_INTERVAL", 1*time.Hour),
