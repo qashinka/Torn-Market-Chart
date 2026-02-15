@@ -3,8 +3,10 @@
 import { useEffect, useState } from 'react';
 import { api, Item } from '@/lib/api';
 import { ItemCard } from '@/components/item-card';
+import { useAuth } from '@/contexts/auth-context';
 
 export default function DashboardPage() {
+    const { isLoading: authLoading, token } = useAuth();
     const [items, setItems] = useState<Item[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -12,6 +14,9 @@ export default function DashboardPage() {
     const [viewMode, setViewMode] = useState<'all' | 'watched'>('all');
 
     useEffect(() => {
+        // Wait for auth to finish initializing before fetching
+        if (authLoading) return;
+
         const fetchItems = async () => {
             try {
                 const data = await api.getTrackedItems();
@@ -32,7 +37,7 @@ export default function DashboardPage() {
         };
 
         fetchItems();
-    }, []);
+    }, [authLoading, token]);
 
     const filteredItems = items.filter((item) => {
         const matchesSearch =
