@@ -187,17 +187,11 @@ func (h *PriceHandler) ListTracked(w http.ResponseWriter, r *http.Request) {
 		SELECT 
 			i.id, i.name, i.type, i.circulation, i.is_tracked, 
 			CASE WHEN uw.user_id IS NOT NULL THEN true ELSE false END as is_watched,
-			COALESCE(mp.price, i.last_market_price, 0) as last_market_price,
-			COALESCE(bp.price, i.last_bazaar_price, 0) as last_bazaar_price,
-			GREATEST(mp.time, bp.time, i.last_updated_at) as last_updated_at
+			COALESCE(i.last_market_price, 0) as last_market_price,
+			COALESCE(i.last_bazaar_price, 0) as last_bazaar_price,
+			i.last_updated_at
 		FROM items i
 		LEFT JOIN user_watchlists uw ON i.id = uw.item_id AND uw.user_id = $1
-		LEFT JOIN LATERAL (
-			SELECT price, time FROM market_prices WHERE item_id = i.id ORDER BY time DESC LIMIT 1
-		) mp ON true
-		LEFT JOIN LATERAL (
-			SELECT price, time FROM bazaar_prices WHERE item_id = i.id ORDER BY time DESC LIMIT 1
-		) bp ON true
 		WHERE i.is_tracked = true OR uw.user_id IS NOT NULL
 		ORDER BY i.name ASC
 	`
@@ -465,19 +459,13 @@ func (h *PriceHandler) ListWatched(w http.ResponseWriter, r *http.Request) {
 	query := `
 		SELECT 
 			i.id, i.name, i.type, i.circulation, i.is_tracked, true as is_watched,
-			COALESCE(mp.price, i.last_market_price, 0) as last_market_price,
-			COALESCE(bp.price, i.last_bazaar_price, 0) as last_bazaar_price,
-			GREATEST(mp.time, bp.time, i.last_updated_at) as last_updated_at,
+			COALESCE(i.last_market_price, 0) as last_market_price,
+			COALESCE(i.last_bazaar_price, 0) as last_bazaar_price,
+			i.last_updated_at,
 			ua.alert_price_above, ua.alert_price_below, ua.alert_change_percent
 		FROM items i
 		JOIN user_watchlists uw ON i.id = uw.item_id AND uw.user_id = $1
 		LEFT JOIN user_alerts ua ON i.id = ua.item_id AND ua.user_id = $1
-		LEFT JOIN LATERAL (
-			SELECT price, time FROM market_prices WHERE item_id = i.id ORDER BY time DESC LIMIT 1
-		) mp ON true
-		LEFT JOIN LATERAL (
-			SELECT price, time FROM bazaar_prices WHERE item_id = i.id ORDER BY time DESC LIMIT 1
-		) bp ON true
 		ORDER BY i.name ASC
 	`
 
