@@ -15,8 +15,10 @@
 ### 🚀 高速データ収集・監視
 - **リアルタイム WebSocket**: 公式サーバー (`wss://ws-centrifugo.torn.com`) に直結し、トレード発生と同時に更新を検知します（サブ秒レイテンシ）。
 - **ハイブリッド・ポーリング**:
-  - **Bazaar Poller**: 監視リストのアイテムを **10秒ごと** に `weav3r.dev` API経由でチェックします。
-  - **Background Crawler**: 監視外の全アイテム（1,200個以上）をバックグラウンドで **0.5秒間隔** で巡回し、市場全体のデータを蓄積します。
+  - **Bazaar Poller (2フェーズ)**: `weav3r.dev` API経由でバザー価格を取得します。
+    - **Phase 1**: ウォッチリストのアイテムを **30秒ごと** に高優先でフェッチ。
+    - **Phase 2**: 残りのレート枠（1800 req/min）で、全トラッキングアイテムを古い順にフェッチ。
+  - **Background Crawler**: 全アイテム（1,200個以上）をバックグラウンドで **0.5秒間隔** で巡回し、市場全体のデータを蓄積します。
 - **高並行処理**: Go言語による並列処理で、大量のリクエストを効率的にさばきます。
 
 ### 📊 高度な可視化 (Visualization)
@@ -68,7 +70,7 @@ graph TD
     API --> DB
     API --> Redis
     
-    Worker1 -->|ポーリング 10秒| Weav3r
+    Worker1 -->|ポーリング 30秒| Weav3r
     Worker1 --> DB
     Worker1 --> Redis
     
@@ -115,10 +117,23 @@ graph TD
    ```
 
 3. **サービスの起動**
+
+   プロファイルを指定してサービスを起動します。
+
    ```bash
-   # モード A: 内部データベースを使用 (簡単・推奨)
-   docker-compose --profile internal up -d --build
+   # 推奨: ローカルDB + 全サービス（Cloudflare Tunnel含む）
+   docker compose --profile internal up -d --build
    ```
+
+   > **📌 プロファイルの違い**
+   >
+   > | プロファイル | 用途 | 含まれるサービス |
+   > |---|---|---|
+   > | `internal` | **推奨**。ローカルDBを使用 | db, redis, api, frontend, tunnel |
+   > | `external` | リモートDB (Tailscale経由) を使用 | db-proxy, redis, api, frontend, tunnel |
+   >
+   > `external` プロファイルは `TS_AUTHKEY` と `REMOTE_DB_HOST` の設定が必要です。  
+   > ローカルで完結する場合は **`internal` を使用してください**。
    
 4. **ダッシュボードへのアクセス**
    ブラウザで [http://localhost:3000](http://localhost:3000) を開いてください。
@@ -127,14 +142,18 @@ graph TD
 
 ## 🔧 設定項目 (.env)
 
-| 変数名                      | 説明                     | デフォルト値             |
-| :-------------------------- | :----------------------- | :----------------------- |
-| `DB_DSN`                    | PostgreSQL 接続文字列    | `postgres://...`         |
-| `REDIS_URL`                 | Redis 接続文字列         | `redis://localhost:6379` |
-| `TORN_API_KEY`              | フォールバック用 APIキー | `""`                     |
-| `DISCORD_WEBHOOK_URL`       | 通知用 Webhook URL       | `""`                     |
-| `BAZAAR_RATE_LIMIT`         | Weav3r API 制限 (回/分)  | `1800`                   |
-| `BACKGROUND_CRAWL_INTERVAL` | バックグラウンド巡回間隔 | `500ms`                  |
+| 変数名                      | 説明                       | デフォルト値             |
+| :-------------------------- | :------------------------- | :----------------------- |
+| `DB_DSN`                    | PostgreSQL 接続文字列      | `postgres://...`         |
+| `REDIS_URL`                 | Redis 接続文字列           | `redis://localhost:6379` |
+| `TORN_API_KEY`              | フォールバック用 APIキー   | `""`                     |
+| `DISCORD_WEBHOOK_URL`       | 通知用 Webhook URL         | `""`                     |
+| `BAZAAR_POLL_INTERVAL`      | バザー価格取得間隔         | `30s`                    |
+| `BAZAAR_RATE_LIMIT`         | Weav3r API 制限 (回/分)    | `1800`                   |
+| `BACKGROUND_CRAWL_INTERVAL` | バックグラウンド巡回間隔   | `500ms`                  |
+| `MAX_CONCURRENT_FETCHES`    | バザー並行フェッチ数       | `50`                     |
+| `TUNNEL_TOKEN`              | Cloudflare Tunnel トークン | `""`                     |
+| `NEXT_PUBLIC_API_URL`       | 公開API URL (Tunnel用)     | `http://api:8080`        |
 
 ---
 

@@ -15,7 +15,9 @@ Built with **Go** and **Next.js**, designed to handle high-frequency data update
 ### 🚀 High-Performance Data Collection
 - **Real-time WebSocket**: Connects to Torn's `wss://ws-centrifugo.torn.com` to receive trade updates instantly (sub-second latency).
 - **Hybrid Polling**:
-  - **Bazaar Poller**: Checks watched items every **10 seconds** using `weav3r.dev` API.
+  - **Bazaar Poller (2-Phase)**: Fetches bazaar prices via `weav3r.dev` API.
+    - **Phase 1**: Watched items fetched every **30 seconds** (high priority).
+    - **Phase 2**: Remaining rate budget (1800 req/min) fills in all tracked items, oldest first.
   - **Background Crawler**: Rotates through **all 1,200+ items** in the background (0.5s interval) to build a complete price history.
 - **Concurrency**: Written in Go to handle hundreds of concurrent requests efficiently.
 
@@ -68,7 +70,7 @@ graph TD
     API --> DB
     API --> Redis
     
-    Worker1 -->|Poll 10s| Weav3r
+    Worker1 -->|Poll 30s| Weav3r
     Worker1 --> DB
     Worker1 --> Redis
     
@@ -115,10 +117,23 @@ graph TD
    ```
 
 3. **Start Services**
+
+   Specify a profile to start the services.
+
    ```bash
-   # Mode A: Internal DB (Easiest)
-   docker-compose --profile internal up -d --build
+   # Recommended: Local DB + all services (including Cloudflare Tunnel)
+   docker compose --profile internal up -d --build
    ```
+
+   > **📌 Profile Differences**
+   >
+   > | Profile | Use Case | Services Included |
+   > |---|---|---|
+   > | `internal` | **Recommended**. Uses local DB | db, redis, api, frontend, tunnel |
+   > | `external` | Uses remote DB via Tailscale | db-proxy, redis, api, frontend, tunnel |
+   >
+   > The `external` profile requires `TS_AUTHKEY` and `REMOTE_DB_HOST` to be set.  
+   > For local-only setups, **use `internal`**.
    
 4. **Access the Dashboard**
    Open [http://localhost:3000](http://localhost:3000) in your browser.
@@ -133,8 +148,12 @@ graph TD
 | `REDIS_URL`                 | Redis Connection String             | `redis://localhost:6379` |
 | `TORN_API_KEY`              | Fallback API Key                    | `""`                     |
 | `DISCORD_WEBHOOK_URL`       | Alert notification URL              | `""`                     |
+| `BAZAAR_POLL_INTERVAL`      | Bazaar price fetch interval         | `30s`                    |
 | `BAZAAR_RATE_LIMIT`         | Requests per minute for Weav3r      | `1800`                   |
 | `BACKGROUND_CRAWL_INTERVAL` | Interval between background fetches | `500ms`                  |
+| `MAX_CONCURRENT_FETCHES`    | Concurrent bazaar fetch limit       | `50`                     |
+| `TUNNEL_TOKEN`              | Cloudflare Tunnel token             | `""`                     |
+| `NEXT_PUBLIC_API_URL`       | Public API URL (for Tunnel)         | `http://api:8080`        |
 
 ---
 
