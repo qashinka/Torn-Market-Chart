@@ -1,16 +1,18 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import {
     createChart,
     IChartApi,
     ISeriesApi,
-    CandlestickData,
     Time,
     ColorType,
     HistogramData,
     LogicalRange,
     IPriceLine,
+    CandlestickData,
+    AreaData,
+    MouseEventParams,
 } from 'lightweight-charts';
 import { PriceCandle } from '@/lib/api';
 import { Maximize2, Minimize2, Trash2, Crosshair, PlusCircle, RotateCcw, TrendingUp, ArrowUpRight, MoveHorizontal, Minus } from 'lucide-react';
@@ -36,11 +38,20 @@ interface DrawnLine {
     color: string;
 }
 
+interface ChartDataPoint {
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    volume: number;
+    change: number;
+    isUp: boolean;
+}
+
 interface ChartContextMenuProps {
     x: number;
     y: number;
     price: number | null;
-    time: Time | null;
     onClose: () => void;
     onAddLine: (price: number) => void;
     onClearLines: () => void;
@@ -48,7 +59,7 @@ interface ChartContextMenuProps {
     onResetView: () => void;
 }
 
-function ChartContextMenu({ x, y, price, time, onClose, onAddLine, onClearLines, onCopyPrice, onResetView }: ChartContextMenuProps) {
+function ChartContextMenu({ x, y, price, onClose, onAddLine, onClearLines, onCopyPrice, onResetView }: ChartContextMenuProps) {
     useEffect(() => {
         const handleClickOutside = () => onClose();
         document.addEventListener('click', handleClickOutside);
@@ -130,8 +141,19 @@ function DrawingToolbar({ activeTool, onSelectTool }: { activeTool: DrawingTool;
 export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscreen }: PriceChartProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    // Chart References
     const chartRef = useRef<IChartApi | null>(null);
     const mainSeriesRef = useRef<ISeriesApi<'Candlestick'> | ISeriesApi<'Area'> | null>(null);
+    const volumeSeriesRef = useRef<ISeriesApi<'Histogram'> | null>(null);
+
+    // Indicator Series References
+    const smaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const emaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbMiddleSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+    const bbLowerSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+
     const visibleRangeRef = useRef<LogicalRange | null>(null);
     const isFirstLoadRef = useRef(true);
     const linesMapRef = useRef<Map<string, IPriceLine>>(new Map());
@@ -140,7 +162,20 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
     const [showSMA, setShowSMA] = useState(false);
     const [showEMA, setShowEMA] = useState(false);
     const [showBB, setShowBB] = useState(false);
-    const [crosshairData, setCrosshairData] = useState<any>(null);
+    const [hoveredData, setHoveredData] = useState<ChartDataPoint | null>(null);
+
+    // Derived state for display
+    const displayData = useMemo(() => {
+        if (hoveredData) return hoveredData;
+        if (data.length > 0) {
+            const last = data[data.length - 1];
+            return {
+                open: last.open, high: last.high, low: last.low, close: last.close,
+                volume: last.volume || 0, change: ((last.close - last.open) / last.open) * 100, isUp: last.close >= last.open
+            };
+        }
+        return null;
+    }, [data, hoveredData]);
 
     // Interaction State
     const [contextMenu, setContextMenu] = useState<{ x: number; y: number; price: number | null; time: Time | null } | null>(null);
@@ -153,122 +188,10 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
     const [drawStart, setDrawStart] = useState<{ x: number; y: number } | null>(null);
     const [currentMousePos, setCurrentMousePos] = useState<{ x: number; y: number } | null>(null);
 
-    // Draw canvas lines
-    const drawCanvas = useCallback(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-
-        // Clear canvas
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-        // Draw existing lines
-        drawnLines.forEach(line => {
-            ctx.beginPath();
-            ctx.strokeStyle = line.color;
-            ctx.lineWidth = 2;
-            ctx.setLineDash([]);
-
-            if (line.type === 'trendline') {
-                ctx.moveTo(line.startX, line.startY);
-                ctx.lineTo(line.endX, line.endY);
-            } else if (line.type === 'ray') {
-                // Extend line from start through end to canvas edge
-                const dx = line.endX - line.startX;
-                const dy = line.endY - line.startY;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0) {
-                    const nx = dx / len;
-                    const ny = dy / len;
-                    const extendedX = line.startX + nx * 2000;
-                    const extendedY = line.startY + ny * 2000;
-                    ctx.moveTo(line.startX, line.startY);
-                    ctx.lineTo(extendedX, extendedY);
-                }
-            } else if (line.type === 'extended') {
-                // Extend both directions
-                const dx = line.endX - line.startX;
-                const dy = line.endY - line.startY;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0) {
-                    const nx = dx / len;
-                    const ny = dy / len;
-                    ctx.moveTo(line.startX - nx * 2000, line.startY - ny * 2000);
-                    ctx.lineTo(line.startX + nx * 2000, line.startY + ny * 2000);
-                }
-            } else if (line.type === 'horizontal') {
-                ctx.moveTo(0, line.startY);
-                ctx.lineTo(canvas.width, line.startY);
-            }
-
-            ctx.stroke();
-        });
-
-        // Draw preview line when drawing
-        if (isDrawing && drawStart && currentMousePos) {
-            ctx.beginPath();
-            ctx.strokeStyle = '#2962FF';
-            ctx.lineWidth = 2;
-            ctx.setLineDash([5, 5]);
-
-            if (activeTool === 'horizontal') {
-                ctx.moveTo(0, drawStart.y);
-                ctx.lineTo(canvas.width, drawStart.y);
-            } else if (activeTool === 'ray') {
-                const dx = currentMousePos.x - drawStart.x;
-                const dy = currentMousePos.y - drawStart.y;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0) {
-                    const nx = dx / len;
-                    const ny = dy / len;
-                    ctx.moveTo(drawStart.x, drawStart.y);
-                    ctx.lineTo(drawStart.x + nx * 2000, drawStart.y + ny * 2000);
-                }
-            } else if (activeTool === 'extended') {
-                const dx = currentMousePos.x - drawStart.x;
-                const dy = currentMousePos.y - drawStart.y;
-                const len = Math.sqrt(dx * dx + dy * dy);
-                if (len > 0) {
-                    const nx = dx / len;
-                    const ny = dy / len;
-                    ctx.moveTo(drawStart.x - nx * 2000, drawStart.y - ny * 2000);
-                    ctx.lineTo(drawStart.x + nx * 2000, drawStart.y + ny * 2000);
-                }
-            } else {
-                ctx.moveTo(drawStart.x, drawStart.y);
-                ctx.lineTo(currentMousePos.x, currentMousePos.y);
-            }
-
-            ctx.stroke();
-        }
-    }, [drawnLines, isDrawing, drawStart, currentMousePos, activeTool]);
-
-    // Redraw canvas when dependencies change
-    useEffect(() => {
-        drawCanvas();
-    }, [drawCanvas]);
-
-    // Resize canvas to match container
-    useEffect(() => {
-        const resizeCanvas = () => {
-            const canvas = canvasRef.current;
-            const container = containerRef.current;
-            if (!canvas || !container) return;
-            canvas.width = container.clientWidth;
-            canvas.height = container.clientHeight;
-            drawCanvas();
-        };
-
-        resizeCanvas();
-        window.addEventListener('resize', resizeCanvas);
-        return () => window.removeEventListener('resize', resizeCanvas);
-    }, [drawCanvas]);
-
+    // --- Chart Initialization ---
     useEffect(() => {
         if (!containerRef.current) return;
 
-        // Create chart with TradingView-like dark theme
         const chart = createChart(containerRef.current, {
             layout: {
                 background: { type: ColorType.Solid, color: '#131722' },
@@ -309,15 +232,55 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
 
         chartRef.current = chart;
 
+        // Create Volume Series (Always present)
         const volumeSeries = chart.addHistogramSeries({
             color: '#26a69a',
             priceFormat: { type: 'volume' },
             priceScaleId: '',
         });
-
         volumeSeries.priceScale().applyOptions({
             scaleMargins: { top: 0.8, bottom: 0 },
         });
+        volumeSeriesRef.current = volumeSeries;
+
+        // Resize handler
+        const resizeObserver = new ResizeObserver((entries) => {
+            if (entries.length === 0 || !entries[0].target) return;
+            const newRect = entries[0].contentRect;
+            chart.applyOptions({ width: newRect.width, height: newRect.height });
+        });
+        resizeObserver.observe(containerRef.current);
+
+        // Visible range handler
+        chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+            if (range) visibleRangeRef.current = range;
+        });
+
+        return () => {
+            resizeObserver.disconnect();
+            chart.remove();
+            chartRef.current = null;
+            mainSeriesRef.current = null;
+            volumeSeriesRef.current = null;
+            smaSeriesRef.current = null;
+            emaSeriesRef.current = null;
+            bbUpperSeriesRef.current = null;
+            bbMiddleSeriesRef.current = null;
+            bbLowerSeriesRef.current = null;
+            isFirstLoadRef.current = true;
+        };
+    }, [height]);
+
+    // --- Main Series Management (Candle/Line) ---
+    useEffect(() => {
+        const chart = chartRef.current;
+        if (!chart) return;
+
+        // Remove previous main series
+        if (mainSeriesRef.current) {
+            chart.removeSeries(mainSeriesRef.current);
+            mainSeriesRef.current = null;
+        }
 
         let mainSeries: ISeriesApi<'Candlestick'> | ISeriesApi<'Area'>;
 
@@ -339,194 +302,223 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
         }
         mainSeriesRef.current = mainSeries;
 
-        const resizeObserver = new ResizeObserver((entries) => {
-            if (entries.length === 0 || !entries[0].target) return;
-            const newRect = entries[0].contentRect;
-            chart.applyOptions({ width: newRect.width, height: newRect.height });
+    }, [chartType]);
+
+
+    // --- Data Update Logic ---
+    useEffect(() => {
+        const chart = chartRef.current;
+        const mainSeries = mainSeriesRef.current;
+        const volumeSeries = volumeSeriesRef.current;
+
+        if (!chart || !mainSeries || !volumeSeries || data.length === 0) return;
+
+        const timezoneOffsetSeconds = new Date().getTimezoneOffset() * 60;
+
+        // Process Data
+        const chartData = data.map((d) => {
+            const utcSeconds = new Date(d.time).getTime() / 1000;
+            const time = (utcSeconds - timezoneOffsetSeconds) as Time;
+
+            if (chartType === 'candle') {
+                return { time, open: d.open, high: d.high, low: d.low, close: d.close };
+            } else {
+                return { time, value: d.avg_price || d.close };
+            }
         });
 
-        if (containerRef.current) {
-            resizeObserver.observe(containerRef.current);
+        const volumeData = data.map((d) => {
+            const utcSeconds = new Date(d.time).getTime() / 1000;
+            const time = (utcSeconds - timezoneOffsetSeconds) as Time;
+            const color = d.close >= d.open ? 'rgba(8, 153, 129, 0.5)' : 'rgba(242, 54, 69, 0.5)';
+            return { time, value: d.volume || 0, color };
+        });
+
+        // Update Series
+        if (chartType === 'candle') {
+            (mainSeries as ISeriesApi<'Candlestick'>).setData(chartData as CandlestickData<Time>[]);
+        } else {
+            (mainSeries as ISeriesApi<'Area'>).setData(chartData as AreaData<Time>[]);
         }
+        volumeSeries.setData(volumeData as HistogramData<Time>[]);
 
-        if (data.length > 0) {
-            const timezoneOffsetSeconds = new Date().getTimezoneOffset() * 60;
+        // Autoscale Logic (for Candle)
+        if (chartType === 'candle') {
+            mainSeries.applyOptions({
+                autoscaleInfoProvider: () => {
+                    const visibleRange = chart.timeScale().getVisibleLogicalRange();
+                    if (!visibleRange) return null;
 
-            const chartData = data.map((d) => {
-                const utcSeconds = new Date(d.time).getTime() / 1000;
-                const time = (utcSeconds - timezoneOffsetSeconds) as Time;
+                    const from = Math.max(0, Math.floor(visibleRange.from));
+                    const to = Math.min(data.length - 1, Math.ceil(visibleRange.to));
 
-                if (chartType === 'candle') {
-                    return { time, open: d.open, high: d.high, low: d.low, close: d.close };
-                } else {
-                    return { time, value: d.avg_price || d.close };
-                }
-            });
-            mainSeries.setData(chartData as any);
+                    if (from > to || to < 0) return null;
 
-            // Apply body-based autoscaling with outlier detection for candle charts
-            if (chartType === 'candle') {
-                mainSeries.applyOptions({
-                    autoscaleInfoProvider: () => {
-                        const visibleRange = chart.timeScale().getVisibleLogicalRange();
-                        if (!visibleRange) return null;
-
-                        const from = Math.max(0, Math.floor(visibleRange.from));
-                        const to = Math.min(data.length - 1, Math.ceil(visibleRange.to));
-
-                        if (from > to || to < 0) return null;
-
-                        // Collect body prices (open/close) for visible candles
-                        const bodyPrices: number[] = [];
-                        for (let i = from; i <= to; i++) {
-                            if (data[i]) {
-                                bodyPrices.push(data[i].open, data[i].close);
-                            }
+                    const bodyPrices: number[] = [];
+                    for (let i = from; i <= to; i++) {
+                        if (data[i]) {
+                            bodyPrices.push(data[i].open, data[i].close);
                         }
+                    }
 
-                        if (bodyPrices.length < 2) return null;
+                    if (bodyPrices.length < 2) return null;
 
-                        // Apply IQR outlier filtering on visible body prices for scaling only
-                        const sorted = [...bodyPrices].sort((a, b) => a - b);
-                        const q1 = sorted[Math.floor(sorted.length * 0.25)];
-                        const q3 = sorted[Math.floor(sorted.length * 0.75)];
-                        const iqr = q3 - q1;
-                        const lowerBound = q1 - 2 * iqr;
-                        const upperBound = q3 + 2 * iqr;
+                    const sorted = [...bodyPrices].sort((a, b) => a - b);
+                    const q1 = sorted[Math.floor(sorted.length * 0.25)];
+                    const q3 = sorted[Math.floor(sorted.length * 0.75)];
+                    const iqr = q3 - q1;
+                    const lowerBound = q1 - 2 * iqr;
+                    const upperBound = q3 + 2 * iqr;
 
-                        // Filter to get reasonable price range for scaling
-                        const filteredPrices = bodyPrices.filter(p => p >= lowerBound && p <= upperBound);
+                    const filteredPrices = bodyPrices.filter(p => p >= lowerBound && p <= upperBound);
 
-                        if (filteredPrices.length === 0) {
-                            const minPrice = Math.min(...bodyPrices);
-                            const maxPrice = Math.max(...bodyPrices);
-                            const padding = (maxPrice - minPrice) * 0.1;
-                            return {
-                                priceRange: {
-                                    minValue: minPrice - padding,
-                                    maxValue: maxPrice + padding,
-                                },
-                            };
-                        }
+                    if (filteredPrices.length === 0) {
+                        const minPrice = Math.min(...bodyPrices);
+                        const maxPrice = Math.max(...bodyPrices);
+                        const padding = (maxPrice - minPrice) * 0.1;
+                        return { priceRange: { minValue: minPrice - padding, maxValue: maxPrice + padding } };
+                    }
 
-                        const minPrice = Math.min(...filteredPrices);
-                        const maxPrice = Math.max(...filteredPrices);
-                        const padding = (maxPrice - minPrice) * 0.15;
+                    const minPrice = Math.min(...filteredPrices);
+                    const maxPrice = Math.max(...filteredPrices);
+                    const padding = (maxPrice - minPrice) * 0.15;
 
-                        return {
-                            priceRange: {
-                                minValue: minPrice - padding,
-                                maxValue: maxPrice + padding,
-                            },
-                        };
-                    },
-                });
-            }
-
-            const volumeData = data.map((d) => {
-                const utcSeconds = new Date(d.time).getTime() / 1000;
-                const time = (utcSeconds - timezoneOffsetSeconds) as Time;
-                const color = d.close >= d.open ? 'rgba(8, 153, 129, 0.5)' : 'rgba(242, 54, 69, 0.5)';
-                return { time, value: d.volume || 0, color };
-            });
-            volumeSeries.setData(volumeData as HistogramData<Time>[]);
-
-            // Indicators
-            const closePrices = data.map(d => d.close);
-            const times = data.map(d => {
-                const utcSeconds = new Date(d.time).getTime() / 1000;
-                return (utcSeconds - timezoneOffsetSeconds) as Time;
-            });
-
-            if (showSMA) {
-                const smaPeriod = 20;
-                const smaData = SMA.calculate({ period: smaPeriod, values: closePrices });
-                const smaSeries = chart.addLineSeries({
-                    color: '#2962FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                const validSmaData = smaData.map((val, i) => ({ time: times[i + (smaPeriod - 1)], value: val }));
-                smaSeries.setData(validSmaData);
-            }
-
-            if (showEMA) {
-                const emaPeriod = 10;
-                const emaData = EMA.calculate({ period: emaPeriod, values: closePrices });
-                const emaSeries = chart.addLineSeries({
-                    color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-                });
-                const validEmaData = emaData.map((val, i) => ({ time: times[i + (emaPeriod - 1)], value: val }));
-                emaSeries.setData(validEmaData);
-            }
-
-            if (showBB) {
-                const period = 20;
-                const stdDev = 2;
-                const bbResult = BollingerBands.calculate({ period, values: closePrices, stdDev });
-
-                const upperSeries = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-                const middleSeries = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-                const lowerSeries = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
-
-                const validDataUpper = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.upper }));
-                const validDataMiddle = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.middle }));
-                const validDataLower = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.lower }));
-
-                upperSeries.setData(validDataUpper);
-                middleSeries.setData(validDataMiddle);
-                lowerSeries.setData(validDataLower);
-            }
-
-            if (isFirstLoadRef.current) {
-                chart.timeScale().fitContent();
-                isFirstLoadRef.current = false;
-            } else if (visibleRangeRef.current) {
-                chart.timeScale().setVisibleLogicalRange(visibleRangeRef.current);
-            }
-
-            chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-                if (range) visibleRangeRef.current = range;
-            });
-
-            const last = data[data.length - 1];
-            setCrosshairData({
-                open: last.open, high: last.high, low: last.low, close: last.close,
-                volume: last.volume || 0, change: ((last.close - last.open) / last.open) * 100, isUp: last.close >= last.open
+                    return { priceRange: { minValue: minPrice - padding, maxValue: maxPrice + padding } };
+                },
             });
         }
 
-        chart.subscribeCrosshairMove((param) => {
+        // Restore View State
+        if (isFirstLoadRef.current) {
+            chart.timeScale().fitContent();
+            isFirstLoadRef.current = false;
+        } else if (visibleRangeRef.current) {
+            // chart.timeScale().setVisibleLogicalRange(visibleRangeRef.current);
+        }
+
+    }, [data, chartType]);
+
+    // --- Crosshair Event Handling with Ref ---
+    const dataRef = useRef(data);
+    useEffect(() => { dataRef.current = data; }, [data]);
+
+    useEffect(() => {
+        const chart = chartRef.current;
+        if (!chart) return;
+
+        const handleCrosshairMove = (param: MouseEventParams) => {
             if (param.time) {
+                const currentData = dataRef.current;
                 const timezoneOffsetSeconds = new Date().getTimezoneOffset() * 60;
-                const index = data.findIndex(d => {
+
+                const index = currentData.findIndex(d => {
                     const utcSeconds = new Date(d.time).getTime() / 1000;
                     const localSeconds = utcSeconds - timezoneOffsetSeconds;
                     return (localSeconds as Time) === param.time;
                 });
+
                 if (index !== -1) {
-                    const d = data[index];
-                    setCrosshairData({
+                    const d = currentData[index];
+                    setHoveredData({
                         open: d.open, high: d.high, low: d.low, close: d.close,
                         volume: d.volume || 0, change: ((d.close - d.open) / d.open) * 100, isUp: d.close >= d.open
                     });
+                } else {
+                    setHoveredData(null);
                 }
+            } else {
+                setHoveredData(null);
             }
+        };
+
+        chart.subscribeCrosshairMove(handleCrosshairMove);
+        return () => chart.unsubscribeCrosshairMove(handleCrosshairMove);
+    }, []);
+
+
+    // --- Indicators Management ---
+    useEffect(() => {
+        const chart = chartRef.current;
+        if (!chart || data.length === 0) return;
+
+        const closePrices = data.map(d => d.close);
+        const timezoneOffsetSeconds = new Date().getTimezoneOffset() * 60;
+        const times = data.map(d => {
+            const utcSeconds = new Date(d.time).getTime() / 1000;
+            return (utcSeconds - timezoneOffsetSeconds) as Time;
         });
 
-        linesMapRef.current.clear();
+        // SMA
+        if (showSMA) {
+            if (!smaSeriesRef.current) {
+                smaSeriesRef.current = chart.addLineSeries({
+                    color: '#2962FF', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+            }
+            const smaPeriod = 20;
+            const smaData = SMA.calculate({ period: smaPeriod, values: closePrices });
+            const validSmaData = smaData.map((val, i) => ({ time: times[i + (smaPeriod - 1)], value: val }));
+            smaSeriesRef.current.setData(validSmaData);
+        } else if (smaSeriesRef.current) {
+            chart.removeSeries(smaSeriesRef.current);
+            smaSeriesRef.current = null;
+        }
 
-        return () => {
-            resizeObserver.disconnect();
-            chart.remove();
-            mainSeriesRef.current = null;
-        };
-    }, [height, chartType, data, showSMA, showEMA, showBB]);
+        // EMA
+        if (showEMA) {
+            if (!emaSeriesRef.current) {
+                emaSeriesRef.current = chart.addLineSeries({
+                    color: '#f59e0b', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+                });
+            }
+            const emaPeriod = 10;
+            const emaData = EMA.calculate({ period: emaPeriod, values: closePrices });
+            const validEmaData = emaData.map((val, i) => ({ time: times[i + (emaPeriod - 1)], value: val }));
+            emaSeriesRef.current.setData(validEmaData);
+        } else if (emaSeriesRef.current) {
+            chart.removeSeries(emaSeriesRef.current);
+            emaSeriesRef.current = null;
+        }
 
-    // Effect to sync price lines
+        // Bollinger Bands
+        if (showBB) {
+            if (!bbUpperSeriesRef.current) {
+                bbUpperSeriesRef.current = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+                bbMiddleSeriesRef.current = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, lineStyle: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+                bbLowerSeriesRef.current = chart.addLineSeries({ color: 'rgba(76, 175, 80, 0.5)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
+            }
+
+            const period = 20;
+            const stdDev = 2;
+            const bbResult = BollingerBands.calculate({ period, values: closePrices, stdDev });
+
+            const validDataUpper = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.upper }));
+            const validDataMiddle = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.middle }));
+            const validDataLower = bbResult.map((val, i) => ({ time: times[i + (period - 1)], value: val.lower }));
+
+            bbUpperSeriesRef.current.setData(validDataUpper);
+            bbMiddleSeriesRef.current.setData(validDataMiddle);
+            bbLowerSeriesRef.current.setData(validDataLower);
+
+        } else if (bbUpperSeriesRef.current) {
+            chart.removeSeries(bbUpperSeriesRef.current);
+            chart.removeSeries(bbMiddleSeriesRef.current!);
+            chart.removeSeries(bbLowerSeriesRef.current!);
+            bbUpperSeriesRef.current = null;
+            bbMiddleSeriesRef.current = null;
+            bbLowerSeriesRef.current = null;
+        }
+
+    }, [data, showSMA, showEMA, showBB]);
+
+
+    // --- Price Lines Synchronization ---
     useEffect(() => {
         if (!mainSeriesRef.current) return;
         const series = mainSeriesRef.current;
         const map = linesMapRef.current;
 
+        // Add new lines
         priceLines.forEach(line => {
             if (!map.has(line.id)) {
                 const priceLine = series.createPriceLine({
@@ -536,6 +528,7 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
             }
         });
 
+        // Remove old lines
         const currentIds = new Set(priceLines.map(l => l.id));
         map.forEach((line, id) => {
             if (!currentIds.has(id)) {
@@ -543,8 +536,115 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
                 map.delete(id);
             }
         });
-    }, [priceLines, chartType, data]);
 
+    }, [priceLines, chartType]);
+
+    // Effect to clear lines map when chart type changes (because series is destroyed)
+    useEffect(() => {
+        linesMapRef.current.clear();
+    }, [chartType]);
+
+
+    // --- Canvas Drawing ---
+    const drawCanvas = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        drawnLines.forEach(line => {
+            ctx.beginPath();
+            ctx.strokeStyle = line.color;
+            ctx.lineWidth = 2;
+            ctx.setLineDash([]);
+
+            if (line.type === 'trendline') {
+                ctx.moveTo(line.startX, line.startY);
+                ctx.lineTo(line.endX, line.endY);
+            } else if (line.type === 'ray') {
+                const dx = line.endX - line.startX;
+                const dy = line.endY - line.startY;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    const nx = dx / len;
+                    const ny = dy / len;
+                    const extendedX = line.startX + nx * 2000;
+                    const extendedY = line.startY + ny * 2000;
+                    ctx.moveTo(line.startX, line.startY);
+                    ctx.lineTo(extendedX, extendedY);
+                }
+            } else if (line.type === 'extended') {
+                const dx = line.endX - line.startX;
+                const dy = line.endY - line.startY;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    const nx = dx / len;
+                    const ny = dy / len;
+                    ctx.moveTo(line.startX - nx * 2000, line.startY - ny * 2000);
+                    ctx.lineTo(line.startX + nx * 2000, line.startY + ny * 2000);
+                }
+            } else if (line.type === 'horizontal') {
+                ctx.moveTo(0, line.startY);
+                ctx.lineTo(canvas.width, line.startY);
+            }
+            ctx.stroke();
+        });
+
+        if (isDrawing && drawStart && currentMousePos) {
+            ctx.beginPath();
+            ctx.strokeStyle = '#2962FF';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([5, 5]);
+
+            if (activeTool === 'horizontal') {
+                ctx.moveTo(0, drawStart.y);
+                ctx.lineTo(canvas.width, drawStart.y);
+            } else if (activeTool === 'ray') {
+                const dx = currentMousePos.x - drawStart.x;
+                const dy = currentMousePos.y - drawStart.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    const nx = dx / len;
+                    const ny = dy / len;
+                    ctx.moveTo(drawStart.x, drawStart.y);
+                    ctx.lineTo(drawStart.x + nx * 2000, drawStart.y + ny * 2000);
+                }
+            } else if (activeTool === 'extended') {
+                const dx = currentMousePos.x - drawStart.x;
+                const dy = currentMousePos.y - drawStart.y;
+                const len = Math.sqrt(dx * dx + dy * dy);
+                if (len > 0) {
+                    const nx = dx / len;
+                    const ny = dy / len;
+                    ctx.moveTo(drawStart.x - nx * 2000, drawStart.y - ny * 2000);
+                    ctx.lineTo(drawStart.x + nx * 2000, drawStart.y + ny * 2000);
+                }
+            } else {
+                ctx.moveTo(drawStart.x, drawStart.y);
+                ctx.lineTo(currentMousePos.x, currentMousePos.y);
+            }
+            ctx.stroke();
+        }
+    }, [drawnLines, isDrawing, drawStart, currentMousePos, activeTool]);
+
+    useEffect(() => { drawCanvas(); }, [drawCanvas]);
+    useEffect(() => {
+        const resizeCanvas = () => {
+            const canvas = canvasRef.current;
+            const container = containerRef.current;
+            if (!canvas || !container) return;
+            canvas.width = container.clientWidth;
+            canvas.height = container.clientHeight;
+            drawCanvas();
+        };
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        return () => window.removeEventListener('resize', resizeCanvas);
+    }, [drawCanvas]);
+
+    // Context Menu Handlers
     const handleContextMenu = (e: React.MouseEvent) => {
         e.preventDefault();
         if (!containerRef.current || !mainSeriesRef.current || !chartRef.current) return;
@@ -585,42 +685,33 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
         setContextMenu(null);
     };
 
-    // Drawing event handlers
+    // Drawing Mouse Handlers
     const handleCanvasMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (activeTool === 'none') return;
         e.preventDefault();
-
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
-
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
         if (activeTool === 'horizontal') {
-            // Single click for horizontal line
             const newLine: DrawnLine = {
                 id: Math.random().toString(36).substr(2, 9),
                 type: 'horizontal',
-                startX: 0,
-                startY: y,
-                endX: rect.width,
-                endY: y,
+                startX: 0, startY: y, endX: rect.width, endY: y,
                 color: '#f59e0b',
             };
             setDrawnLines(prev => [...prev, newLine]);
             return;
         }
-
         setIsDrawing(true);
         setDrawStart({ x, y });
     };
 
     const handleCanvasMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!isDrawing || !drawStart) return;
-
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
-
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         setCurrentMousePos({ x, y });
@@ -628,23 +719,18 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
 
     const handleCanvasMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
         if (!isDrawing || !drawStart || activeTool === 'none') return;
-
         const rect = canvasRef.current?.getBoundingClientRect();
         if (!rect) return;
-
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
 
         const newLine: DrawnLine = {
             id: Math.random().toString(36).substr(2, 9),
             type: activeTool,
-            startX: drawStart.x,
-            startY: drawStart.y,
-            endX: x,
-            endY: y,
+            startX: drawStart.x, startY: drawStart.y,
+            endX: x, endY: y,
             color: '#f59e0b',
         };
-
         setDrawnLines(prev => [...prev, newLine]);
         setIsDrawing(false);
         setDrawStart(null);
@@ -717,18 +803,18 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
                 <DrawingToolbar activeTool={activeTool} onSelectTool={setActiveTool} />
 
                 {/* Legend */}
-                {crosshairData && (
+                {displayData && (
                     <div className="absolute top-2 left-16 z-10 font-mono text-xs text-[#d1d5db] pointer-events-none select-none flex flex-col gap-0.5 bg-[#131722]/60 backdrop-blur-sm p-1.5 rounded border border-[#2B2B43]/50">
                         <div className="flex gap-4">
-                            <span className="text-gray-400">O <span className={crosshairData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{crosshairData.open?.toLocaleString()}</span></span>
-                            <span className="text-gray-400">H <span className={crosshairData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{crosshairData.high?.toLocaleString()}</span></span>
-                            <span className="text-gray-400">L <span className={crosshairData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{crosshairData.low?.toLocaleString()}</span></span>
-                            <span className="text-gray-400">C <span className={crosshairData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{crosshairData.close?.toLocaleString()}</span></span>
+                            <span className="text-gray-400">O <span className={displayData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{displayData.open?.toLocaleString()}</span></span>
+                            <span className="text-gray-400">H <span className={displayData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{displayData.high?.toLocaleString()}</span></span>
+                            <span className="text-gray-400">L <span className={displayData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{displayData.low?.toLocaleString()}</span></span>
+                            <span className="text-gray-400">C <span className={displayData.isUp ? 'text-[#089981]' : 'text-[#f23645]'}>{displayData.close?.toLocaleString()}</span></span>
                         </div>
                         <div className="flex gap-4">
-                            <span className="text-gray-400">Vol <span className="text-[#e1e1e1]">{crosshairData.volume?.toLocaleString()}</span></span>
-                            <span className={`${crosshairData.change >= 0 ? 'text-[#089981]' : 'text-[#f23645]'}`}>
-                                {crosshairData.change >= 0 ? '+' : ''}{crosshairData.change.toFixed(2)}%
+                            <span className="text-gray-400">Vol <span className="text-[#e1e1e1]">{displayData.volume?.toLocaleString()}</span></span>
+                            <span className={`${displayData.change >= 0 ? 'text-[#089981]' : 'text-[#f23645]'}`}>
+                                {displayData.change >= 0 ? '+' : ''}{displayData.change.toFixed(2)}%
                             </span>
                         </div>
                     </div>
@@ -773,7 +859,6 @@ export function PriceChart({ data, height = 500, isFullscreen, onToggleFullscree
                         x={contextMenu.x}
                         y={contextMenu.y}
                         price={contextMenu.price}
-                        time={contextMenu.time}
                         onClose={() => setContextMenu(null)}
                         onAddLine={addHorizontalLine}
                         onClearLines={clearLines}
