@@ -544,6 +544,103 @@ func (h *PriceHandler) UpdateAlertSettings(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+// GetItemHistory returns the price history for a specific item over the last 24 hours
+// GET /api/v1/items/{id}/history
+func (h *PriceHandler) GetItemHistory(w http.ResponseWriter, r *http.Request) {
+	itemIDStr := chi.URLParam(r, "id")
+	itemID, err := strconv.ParseInt(itemIDStr, 10, 64)
+	if err != nil {
+		http.Error(w, "Invalid item ID", http.StatusBadRequest)
+		return
+	}
+
+	query := `
+		SELECT 
+			item_id, price as market_price, 0 as bazaar_price, time as timestamp
+		FROM market_prices
+		WHERE item_id = $1 AND time >= NOW() - INTERVAL '24 hours'
+		ORDER BY time ASC
+	`
+
+	rows, err := h.db.Pool.Query(r.Context(), query, itemID)
+	if err != nil {
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	var history []models.Item
+	for rows.Next() {
+		var hItem models.Item
+		if err := rows.Scan(&hItem.ID, &hItem.LastMarketPrice, &hItem.LastBazaarPrice, &hItem.LastUpdatedAt); err == nil {
+			history = append(history, hItem)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(history)
+}
+
+// GetMarketSummary returns items with largest price movements in the last 24h
+// GET /api/v1/market/summary
+func (h *PriceHandler) GetMarketSummary(w http.ResponseWriter, r *http.Request) {
+	query := `
+		WITH current_prices AS (
+			SELECT item_id, price as market_price
+			FROM (
+				SELECT item_id, price, ROW_NUMBER() OVER(PARTITION BY item_id ORDER BY time DESC) as rn
+				FROM market_prices
+			) sub WHERE rn = 1
+		),
+		old_prices AS (
+			SELECT item_id, price as market_price
+			FROM (
+				SELECT item_id, price, ROW_NUMBER() OVER(PARTITION BY item_id ORDER BY time ASC) as rn
+				FROM market_prices
+				WHERE time >= NOW() - INTERVAL '24 hours'
+			) sub WHERE rn = 1 AND price > 0
+		)
+		SELECT 
+			i.id, i.name, 
+			cp.market_price as current_price,
+			op.market_price as old_price,
+			((cp.market_price - op.market_price)::float / op.market_price * 100) as change_percent
+		FROM items i
+		JOIN current_prices cp ON i.id = cp.item_id
+		JOIN old_prices op ON i.id = op.item_id
+		WHERE i.is_tracked = true AND cp.market_price > 0 AND op.market_price > 0
+		ORDER BY abs(((cp.market_price - op.market_price)::float / op.market_price * 100)) DESC
+		LIMIT 10
+	`
+
+	rows, err := h.db.Pool.Query(r.Context(), query)
+	if err != nil {
+		fmt.Printf("Database error in GetMarketSummary: %v\n", err)
+		http.Error(w, "Database error", http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type SummaryItem struct {
+		ID            int64   `json:"id"`
+		Name          string  `json:"name"`
+		CurrentPrice  int64   `json:"current_price"`
+		OldPrice      int64   `json:"old_price"`
+		ChangePercent float64 `json:"change_percent"`
+	}
+
+	var results []SummaryItem
+	for rows.Next() {
+		var item SummaryItem
+		if err := rows.Scan(&item.ID, &item.Name, &item.CurrentPrice, &item.OldPrice, &item.ChangePercent); err == nil {
+			results = append(results, item)
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(results)
+}
+
 type WebhookHandler struct {
 	db *database.DB
 }

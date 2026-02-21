@@ -50,7 +50,7 @@ func main() {
 	keyManager := services.NewKeyManager(db, cfg)
 	keyManager.StartAutoRefresh(ctx)
 	settingsService := services.NewSettingsService(db.Pool)
-	alertService := services.NewAlertService(db.Pool, settingsService, cfg.AlertCooldown, cfg.PriceThreshold)
+	alertService := services.NewAlertService(db.Pool, settingsService, cfg.AlertCooldown, cfg.PriceThreshold, cfg.DiscordBotToken)
 
 	// Start a goroutine to update rate limits dynamically
 	go func() {

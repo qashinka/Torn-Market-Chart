@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/bwmarrin/discordgo"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/rs/zerolog/log"
 )
@@ -19,13 +20,25 @@ import (
 type AlertService struct {
 	db       *pgxpool.Pool
 	settings *SettingsService
+	discord  *discordgo.Session
 }
 
 // NewAlertService creates a new AlertService with dynamic settings
-func NewAlertService(db *pgxpool.Pool, settings *SettingsService, cooldown time.Duration, priceThreshold float64) *AlertService {
+func NewAlertService(db *pgxpool.Pool, settings *SettingsService, cooldown time.Duration, priceThreshold float64, botToken string) *AlertService {
+	var session *discordgo.Session
+	if botToken != "" {
+		s, err := discordgo.New("Bot " + botToken)
+		if err == nil {
+			session = s
+		} else {
+			log.Error().Err(err).Msg("Failed to initialize discordgo session in AlertService")
+		}
+	}
+
 	return &AlertService{
 		db:       db,
 		settings: settings,
+		discord:  session,
 	}
 }
 
@@ -60,9 +73,10 @@ func (a *AlertService) CheckAndTrigger(ctx context.Context, update PriceUpdate, 
 
 	// Fetch all users with alert configurations for this item
 	rows, err := a.db.Query(ctx, `
-		SELECT user_id, alert_price_above, alert_price_below, alert_change_percent
-		FROM user_alerts
-		WHERE item_id = $1
+		SELECT ua.user_id, ua.alert_price_above, ua.alert_price_below, ua.alert_change_percent, u.discord_id
+		FROM user_alerts ua
+		LEFT JOIN users u ON u.id = ua.user_id
+		WHERE ua.item_id = $1
 	`, update.ItemID)
 	if err != nil {
 		log.Debug().Err(err).Int64("item_id", update.ItemID).Msg("No alert configs found for item")
@@ -77,12 +91,13 @@ func (a *AlertService) CheckAndTrigger(ctx context.Context, update PriceUpdate, 
 		AlertPriceAbove    *int64
 		AlertPriceBelow    *int64
 		AlertChangePercent *float64
+		DiscordID          *string
 	}
 	var alerts []UserAlert
 
 	for rows.Next() {
 		var ua UserAlert
-		if err := rows.Scan(&ua.UserID, &ua.AlertPriceAbove, &ua.AlertPriceBelow, &ua.AlertChangePercent); err != nil {
+		if err := rows.Scan(&ua.UserID, &ua.AlertPriceAbove, &ua.AlertPriceBelow, &ua.AlertChangePercent, &ua.DiscordID); err != nil {
 			continue
 		}
 		alerts = append(alerts, ua)
@@ -143,11 +158,11 @@ func (a *AlertService) CheckAndTrigger(ctx context.Context, update PriceUpdate, 
 			a.updateAlertState(ctx, update, currentHash, config.UserID, isNewState)
 
 			// Send notification
-			go func(uid int64, reason string) {
-				if err := a.SendAlert(context.Background(), update, reason, uid); err != nil {
-					log.Error().Err(err).Int64("user_id", uid).Msg("Failed to send alert notification")
+			go func(ua UserAlert, reason string) {
+				if err := a.SendAlert(context.Background(), update, reason, ua.UserID, ua.DiscordID); err != nil {
+					log.Error().Err(err).Int64("user_id", ua.UserID).Msg("Failed to send alert notification")
 				}
-			}(config.UserID, alertReason)
+			}(config, alertReason)
 		} else {
 			// Use updateAlertState to keep 'latest seen' up to date?
 			// If we don't update key, then next price might be same hash and skipped.
@@ -189,25 +204,12 @@ func (a *AlertService) generateHash(update PriceUpdate) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// SendAlert sends the actual alert notification to Discord
-func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason string, userID int64) error {
-	// Retrieve dynamic webhook URL from settings
-	webhookURL, err := a.settings.GetForUser(ctx, userID, "discord_webhook_url", "")
-	if err != nil {
-		log.Warn().Err(err).Int64("user_id", userID).Msg("Failed to fetch user webhook setting")
-		return nil
-	}
-	if webhookURL == "" {
-		// Fallback to system default if needed, or just skip
-		// For now, if user hasn't set a webhook, we skip sending private alerts
-		// log.Debug().Int64("user_id", userID).Msg("No webhook configured for user, skipping alert")
-		return nil
-	}
-
-	// Determine Color based on alert type
+// SendAlert sends the actual alert notification to Discord via Webhook and/or DM
+func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason string, userID int64, discordID *string) error {
+	// 1. Determine Color based on alert type
 	color := 0xFFA500 // Orange default
 
-	// Determine URL based on source type
+	// 2. Determine URL based on source type
 	var alertURL string
 	if update.Type == "bazaar" && update.SellerID > 0 {
 		alertURL = fmt.Sprintf("https://www.torn.com/bazaar.php?userId=%d#/", update.SellerID)
@@ -215,8 +217,8 @@ func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason
 		alertURL = fmt.Sprintf("https://www.torn.com/page.php?sid=ItemMarket#/market/view=search&itemID=%d", update.ItemID)
 	}
 
-	// Create Embed
-	embed := map[string]interface{}{
+	// 3. Create Embed Map for Webhook
+	embedMap := map[string]interface{}{
 		"title": fmt.Sprintf("🚨 Price Alert: %s", update.ItemName),
 		"url":   alertURL,
 		"color": color,
@@ -233,7 +235,7 @@ func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason
 			},
 			{
 				"name":   "Source",
-				"value":  update.Type, // "market" or "bazaar"
+				"value":  update.Type,
 				"inline": true,
 			},
 			{
@@ -248,9 +250,8 @@ func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
-	// Add Seller ID if available
 	if update.SellerID > 0 {
-		embed["fields"] = append(embed["fields"].([]map[string]interface{}), map[string]interface{}{
+		embedMap["fields"] = append(embedMap["fields"].([]map[string]interface{}), map[string]interface{}{
 			"name":   "Seller ID",
 			"value":  fmt.Sprintf("[%d](https://www.torn.com/profiles.php?XID=%d)", update.SellerID, update.SellerID),
 			"inline": true,
@@ -260,33 +261,75 @@ func (a *AlertService) SendAlert(ctx context.Context, update PriceUpdate, reason
 	// Content for desktop notifications
 	content := fmt.Sprintf("🚨 **%s** - Price: $%d, Qty: %d", update.ItemName, update.Price, update.Quantity)
 
-	payload := map[string]interface{}{
-		"content": content,
-		"embeds":  []interface{}{embed},
+	// 4. Send Global Webhook if configured and enabled
+	webhookEnabled, _ := a.settings.GetForUser(ctx, userID, "global_webhook_enabled", "true")
+	if webhookEnabled != "false" {
+		webhookURL, err := a.settings.GetForUser(ctx, userID, "discord_webhook_url", "")
+		if err == nil && webhookURL != "" {
+			payload := map[string]interface{}{
+				"content": content,
+				"embeds":  []interface{}{embedMap},
+			}
+
+			jsonData, err := json.Marshal(payload)
+			if err == nil {
+				req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(jsonData))
+				if err == nil {
+					req.Header.Set("Content-Type", "application/json")
+					client := &http.Client{Timeout: 10 * time.Second}
+					resp, err := client.Do(req)
+					if err == nil {
+						resp.Body.Close()
+					}
+				}
+			}
+		}
 	}
 
-	jsonData, err := json.Marshal(payload)
-	if err != nil {
-		return fmt.Errorf("failed to marshal payload: %w", err)
+	// 5. Send Discord DM if Discord ID is present, bot is configured, and enabled
+	dmEnabled, _ := a.settings.GetForUser(ctx, userID, "discord_dm_enabled", "true")
+	if dmEnabled != "false" && discordID != nil && *discordID != "" && a.discord != nil {
+		// Create the discordgo Embed struct
+		discordgoFields := []*discordgo.MessageEmbedField{
+			{Name: "Price", Value: fmt.Sprintf("$%d", update.Price), Inline: true},
+			{Name: "Quantity", Value: fmt.Sprintf("%d", update.Quantity), Inline: true},
+			{Name: "Source", Value: update.Type, Inline: true},
+			{Name: "Trigger", Value: reason, Inline: false},
+		}
+
+		if update.SellerID > 0 {
+			discordgoFields = append(discordgoFields, &discordgo.MessageEmbedField{
+				Name:   "Seller ID",
+				Value:  fmt.Sprintf("[%d](https://www.torn.com/profiles.php?XID=%d)", update.SellerID, update.SellerID),
+				Inline: true,
+			})
+		}
+
+		discordEmbed := &discordgo.MessageEmbed{
+			Title:     fmt.Sprintf("🚨 Price Alert: %s", update.ItemName),
+			URL:       alertURL,
+			Color:     color,
+			Fields:    discordgoFields,
+			Footer:    &discordgo.MessageEmbedFooter{Text: "Torn Market Chart Bot"},
+			Timestamp: time.Now().Format(time.RFC3339),
+		}
+
+		// Create channel and send
+		channel, err := a.discord.UserChannelCreate(*discordID)
+		if err != nil {
+			log.Error().Err(err).Str("discord_id", *discordID).Msg("Failed to create DM channel")
+			return err
+		}
+
+		_, err = a.discord.ChannelMessageSendComplex(channel.ID, &discordgo.MessageSend{
+			Content: content,
+			Embeds:  []*discordgo.MessageEmbed{discordEmbed},
+		})
+		if err != nil {
+			log.Error().Err(err).Str("discord_id", *discordID).Msg("Failed to send DM message")
+			return err
+		}
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", webhookURL, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to send webhook: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("webhook failed with status: %d", resp.StatusCode)
-	}
-
-	log.Debug().Msg("Discord notification sent successfully")
 	return nil
 }

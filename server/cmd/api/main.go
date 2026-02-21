@@ -90,7 +90,7 @@ func main() {
 	settingsService := services.NewSettingsService(db.Pool)
 	seedSettings(ctx, settingsService, cfg)
 
-	alertService := services.NewAlertService(db.Pool, settingsService, cfg.AlertCooldown, cfg.PriceThreshold)
+	alertService := services.NewAlertService(db.Pool, settingsService, cfg.AlertCooldown, cfg.PriceThreshold, cfg.DiscordBotToken)
 
 	// Initialize Torn API Client for Inventory Fetch
 	client := tornapi.NewClient(cfg.TornAPIKeys, cfg.RedisURL)
@@ -121,19 +121,31 @@ func main() {
 	settingsHandler := handlers.NewSettingsHandler(settingsService)
 	keyHandler := handlers.NewKeyHandler(keyManager, client)
 	authHandler := handlers.NewAuthHandler(db, cfg)
+	botInternalHandler := handlers.NewBotInternalHandler(db)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		// Public Routes
-		r.Post("/auth/login", authHandler.Login)
+		r.With(handlers.OptionalAuthMiddleware).Post("/auth/login", authHandler.Login)
+		r.Get("/auth/discord/login", authHandler.DiscordOAuthLogin)
+		r.Get("/auth/discord/callback", authHandler.DiscordOAuthCallback)
 
 		// Items (Public Read)
 		r.With(handlers.OptionalAuthMiddleware).Get("/items", priceHandler.ListTracked)
 		r.With(handlers.OptionalAuthMiddleware).Get("/items/search", priceHandler.SearchItems)
-		r.Get("/items/{id}/history", priceHandler.GetHistory)
+		r.Get("/items/{id}/history", priceHandler.GetItemHistory)
 		r.With(handlers.OptionalAuthMiddleware).Get("/items/{id}/latest", priceHandler.GetLatest)
 		r.Get("/items/{id}/external-prices", priceHandler.GetExternalPrices)
 		r.Get("/items/{id}/listings", priceHandler.GetTopListings)
+		r.Get("/market/summary", priceHandler.GetMarketSummary)
+
+		// Internal Bot Routes (Could be secured by an API key or internal network only)
+		// For now, these are internal API endpoints intended to be called by the bot container
+		r.Route("/bot", func(r chi.Router) {
+			r.Get("/alerts/{discord_id}", botInternalHandler.GetUserAlerts)
+			r.Post("/alerts/{discord_id}", botInternalHandler.AddOrUpdateAlert)
+			r.Delete("/alerts/{discord_id}/items/{item_id}", botInternalHandler.DeleteAlert)
+		})
 
 		// Protected Routes
 		r.Group(func(r chi.Router) {

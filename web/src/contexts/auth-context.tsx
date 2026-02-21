@@ -9,6 +9,9 @@ interface User {
     name: string;
     created_at: string;
     last_login_at: string;
+    discord_id?: string;
+    discord_username?: string;
+    discord_avatar?: string;
 }
 
 interface AuthContextType {
@@ -16,6 +19,7 @@ interface AuthContextType {
     token: string | null;
     isLoading: boolean;
     login: (apiKey: string) => Promise<void>;
+    loginWithToken: (token: string) => Promise<void>;
     logout: () => void;
     isAuthenticated: boolean;
 }
@@ -74,6 +78,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
     };
 
+    const loginWithToken = async (newToken: string) => {
+        setIsLoading(true);
+        try {
+            const userData = await api.getMe(newToken);
+            localStorage.setItem('auth_token', newToken);
+            setToken(newToken);
+            setUser(userData);
+            router.refresh();
+        } catch (error) {
+            console.error('Login with token failed:', error);
+            throw error;
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     const logout = () => {
         localStorage.removeItem('auth_token');
         setToken(null);
@@ -87,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             token,
             isLoading,
             login,
+            loginWithToken,
             logout,
             isAuthenticated: !!user
         }}>

@@ -81,6 +81,13 @@ services:
       - TORN_API_KEYS=${TORN_API_KEY}
       - TORN_WS_TOKEN=${TORN_WS_TOKEN}
       - ENVIRONMENT=production
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_CLIENT_SECRET=${DISCORD_CLIENT_SECRET}
+      - DISCORD_WEBHOOK_URL=${DISCORD_WEBHOOK_URL}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - JWT_SECRET=${JWT_SECRET:-secret}
+      - NEXT_PUBLIC_FRONTEND_URL=${NEXT_PUBLIC_FRONTEND_URL:-http://localhost:3000}
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL:-http://localhost:8080}
     depends_on:
       db:
         condition: service_healthy
@@ -90,6 +97,24 @@ services:
         required: false
       redis:
         condition: service_healthy
+    restart: unless-stopped
+    profiles:
+      - internal
+      - external
+
+  discordbot:
+    build:
+      context: ./server
+      dockerfile: Dockerfile.discordbot
+    container_name: torn_market_discordbot
+    environment:
+      - API_BASE_URL=http://api:8080
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN}
+      - DISCORD_CLIENT_ID=${DISCORD_CLIENT_ID}
+      - DISCORD_GUILD_ID=${DISCORD_GUILD_ID}
+    depends_on:
+      api:
+        condition: service_started
     restart: unless-stopped
     profiles:
       - internal

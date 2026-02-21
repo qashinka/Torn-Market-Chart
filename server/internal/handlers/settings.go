@@ -62,7 +62,7 @@ func (h *SettingsHandler) GetUserSettings(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	keys := []string{"discord_webhook_url"}
+	keys := []string{"discord_webhook_url", "global_webhook_enabled", "discord_dm_enabled"}
 	settings := make(map[string]string)
 
 	for _, key := range keys {
@@ -95,9 +95,10 @@ func (h *SettingsHandler) UpdateUserSetting(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	// Validate allowed keys
 	allowedKeys := map[string]bool{
-		"discord_webhook_url": true,
+		"discord_webhook_url":    true,
+		"global_webhook_enabled": true,
+		"discord_dm_enabled":     true,
 	}
 
 	if !allowedKeys[req.Key] {

@@ -53,6 +53,9 @@ export interface User {
   name: string;
   created_at: string;
   last_login_at: string;
+  discord_id?: string;
+  discord_username?: string;
+  discord_avatar?: string;
 }
 
 export interface LoginResponse {
@@ -66,6 +69,10 @@ class ApiClient {
 
   constructor() {
     this.baseUrl = API_BASE;
+  }
+
+  get baseUrlValue() {
+    return this.baseUrl;
   }
 
   setToken(token: string | null) {

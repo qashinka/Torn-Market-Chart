@@ -119,10 +119,17 @@ func (db *DB) Migrate(ctx context.Context) error {
 			api_key_hash TEXT NOT NULL,      -- Hashed API key (for quick lookup/auth)
 			encrypted_api_key TEXT,          -- Encrypted API key (for background crawling)
 			created_at TIMESTAMPTZ DEFAULT NOW(),
-			last_login_at TIMESTAMPTZ DEFAULT NOW()
+			last_login_at TIMESTAMPTZ DEFAULT NOW(),
+			discord_id VARCHAR(255) UNIQUE,
+			discord_username VARCHAR(255),
+			discord_avatar TEXT
 		);`,
 		// Add encrypted_api_key column to existing users table
 		`ALTER TABLE users ADD COLUMN IF NOT EXISTS encrypted_api_key TEXT;`,
+		// Add discord columns to existing users table
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_id VARCHAR(255) UNIQUE;`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_username VARCHAR(255);`,
+		`ALTER TABLE users ADD COLUMN IF NOT EXISTS discord_avatar TEXT;`,
 
 		// User watchlists (replaces item.is_watched for multi-user)
 		`CREATE TABLE IF NOT EXISTS user_watchlists (

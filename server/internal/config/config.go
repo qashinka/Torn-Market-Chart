@@ -23,6 +23,7 @@ type Config struct {
 
 	// Notifications
 	DiscordWebhookURL string
+	DiscordBotToken   string
 
 	// Redis
 	RedisURL string
@@ -57,6 +58,7 @@ func Load() (*Config, error) {
 		TornWSURL:         getEnv("TORN_WS_URL", "wss://ws-centrifugo.torn.com/connection/websocket"),
 		TornWSToken:       getEnv("TORN_WS_TOKEN", ""),
 		DiscordWebhookURL: getEnv("DISCORD_WEBHOOK_URL", ""),
+		DiscordBotToken:   getEnv("DISCORD_BOT_TOKEN", ""),
 		RedisURL:          getEnv("REDIS_URL", "redis://127.0.0.1:6379"),
 
 		BazaarPollInterval:      getDurationEnv("BAZAAR_POLL_INTERVAL", 30*time.Second),

@@ -26,7 +26,7 @@ TimescaleDBの機能をフル活用し、より深い分析を提供します。
 - [ ] **公開共有リンク**: 特定のチャート設定を "Read-only" URLとして発行し、他人にシェアできる機能。
 
 ## 4. 連携機能の強化
-- [ ] **Discord Bot (Interactive)**:
+- [x] **Discord Bot (Interactive)**:
     - Webhookによる通知だけでなく、Discordから `/price [item]` で価格を問い合わせられるBot機能。
 - [ ] **ブラウザ拡張機能 (Userscript) 連携**:
     - ユーザーがTornを閲覧中に、「自分のインベントリの価値」や「市場価格との乖離」をオーバーレイ表示する拡張機能。

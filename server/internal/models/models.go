@@ -76,11 +76,14 @@ type PriceCandle struct {
 
 // User represents a registered user (via Torn API Key)
 type User struct {
-	ID          int64     `json:"id" db:"id"`
-	Name        string    `json:"name" db:"name"`
-	APIKeyHash  string    `json:"-" db:"api_key_hash"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	LastLoginAt time.Time `json:"last_login_at" db:"last_login_at"`
+	ID              int64     `json:"id" db:"id"`
+	Name            string    `json:"name" db:"name"`
+	APIKeyHash      string    `json:"-" db:"api_key_hash"`
+	CreatedAt       time.Time `json:"created_at" db:"created_at"`
+	LastLoginAt     time.Time `json:"last_login_at" db:"last_login_at"`
+	DiscordID       *string   `json:"discord_id,omitempty" db:"discord_id"`
+	DiscordUsername *string   `json:"discord_username,omitempty" db:"discord_username"`
+	DiscordAvatar   *string   `json:"discord_avatar,omitempty" db:"discord_avatar"`
 }
 
 // UserWatchlist represents an item in a user's watchlist
